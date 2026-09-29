@@ -423,6 +423,3 @@ async def test_early_checkout_and_desk_rebooking(client: AsyncClient):
         headers=user2_headers,
     )
     assert rebook_res.status_code == 201
-
-
-

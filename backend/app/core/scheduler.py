@@ -18,9 +18,7 @@ async def _run_no_show_checker(interval_seconds: int = 60) -> None:
             async with async_session_maker() as session:
                 expired_count = await BookingService.process_no_shows(session)
                 if expired_count > 0:
-                    logger.info(
-                        f"[AUTO-RELEASE] {expired_count} reservas sem check-in expiradas."
-                    )
+                    logger.info(f"[AUTO-RELEASE] {expired_count} reservas sem check-in expiradas.")
         except Exception as e:
             logger.error(f"[AUTO-RELEASE ERROR] Falha ao processar no-shows: {e}")
 

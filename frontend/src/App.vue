@@ -16,7 +16,7 @@ const currentTab = ref<'3d-office' | 'my-bookings' | 'admin-desks' | 'admin-user
 const isBookingModalOpen = ref(false);
 const isQrScannerOpen = ref(false);
 const selectedDesk = ref<DeskWithOccupant | null>(null);
-const officeKey = ref(0);
+const officeCanvasRef = ref<{ refresh: () => Promise<void> } | null>(null);
 
 function openBookingModal(desk: DeskWithOccupant) {
   if (!auth.isAuthenticated.value) {
@@ -28,21 +28,21 @@ function openBookingModal(desk: DeskWithOccupant) {
 }
 
 function handleLoginSuccess() {
-  officeKey.value++;
   currentTab.value = '3d-office';
+  officeCanvasRef.value?.refresh();
 }
 
 function handleBookingCreated() {
-  officeKey.value++; // Refresh 3D scene
+  officeCanvasRef.value?.refresh();
   currentTab.value = 'my-bookings';
 }
 
 function handleDeskUpdated() {
-  officeKey.value++; // Refresh 3D scene without switching away to my-bookings
+  officeCanvasRef.value?.refresh();
 }
 
 function handleCheckinSuccess() {
-  officeKey.value++; // Refresh 3D scene
+  officeCanvasRef.value?.refresh();
 }
 
 onMounted(async () => {
@@ -61,13 +61,13 @@ onMounted(async () => {
     <main class="flex-1 relative">
       <OfficeCanvas3D
         v-if="currentTab === '3d-office'"
-        :key="officeKey"
+        ref="officeCanvasRef"
         @select-desk="openBookingModal"
       />
       <MyBookingsView
         v-else-if="currentTab === 'my-bookings'"
         @open-qr-scanner="isQrScannerOpen = true"
-        @booking-updated="officeKey++"
+        @booking-updated="officeCanvasRef?.refresh()"
       />
       <AdminDesksView v-else-if="currentTab === 'admin-desks'" />
       <AdminUsersView v-else-if="currentTab === 'admin-users'" />

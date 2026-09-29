@@ -50,7 +50,6 @@ class AdminUserUpdate(BaseModel):
     password: str | None = None
 
 
-
 class UserResponse(UserBase):
     id: int
     is_active: bool

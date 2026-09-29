@@ -43,6 +43,10 @@ export function createDeskGroup(desk: DeskWithOccupant): THREE.Group {
   const colorConfig =
     STATUS_COLORS[desk.status as keyof typeof STATUS_COLORS] || STATUS_COLORS.DISPONIVEL;
 
+  const isStanding = !!desk.is_standing_desk;
+  const deskHeight = isStanding ? 1.08 : 0.75;
+  const legHeight = deskHeight;
+
   // 1. Table Top (Bancada)
   const topGeo = new THREE.BoxGeometry(2.0, 0.08, 1.1);
   const topMat = new THREE.MeshStandardMaterial({
@@ -51,7 +55,7 @@ export function createDeskGroup(desk: DeskWithOccupant): THREE.Group {
     metalness: 0.1,
   });
   const topMesh = new THREE.Mesh(topGeo, topMat);
-  topMesh.position.y = 0.75;
+  topMesh.position.y = deskHeight;
   topMesh.castShadow = true;
   topMesh.receiveShadow = true;
   group.add(topMesh);
@@ -65,11 +69,11 @@ export function createDeskGroup(desk: DeskWithOccupant): THREE.Group {
     roughness: 0.2,
   });
   const edgeMesh = new THREE.Mesh(edgeGeo, edgeMat);
-  edgeMesh.position.set(0, 0.77, 0.55);
+  edgeMesh.position.set(0, deskHeight + 0.02, 0.55);
   group.add(edgeMesh);
 
   // 2. Metal Legs (Pernas da mesa)
-  const legGeo = new THREE.CylinderGeometry(0.03, 0.03, 0.75, 12);
+  const legGeo = new THREE.CylinderGeometry(0.03, 0.03, legHeight, 12);
   const legMat = new THREE.MeshStandardMaterial({
     color: 0x2b2d33,
     metalness: 0.8,
@@ -77,10 +81,10 @@ export function createDeskGroup(desk: DeskWithOccupant): THREE.Group {
   });
 
   const legPositions = [
-    [-0.9, 0.375, -0.45],
-    [0.9, 0.375, -0.45],
-    [-0.9, 0.375, 0.45],
-    [0.9, 0.375, 0.45],
+    [-0.9, legHeight / 2, -0.45],
+    [0.9, legHeight / 2, -0.45],
+    [-0.9, legHeight / 2, 0.45],
+    [0.9, legHeight / 2, 0.45],
   ];
 
   legPositions.forEach(([x, y, z]) => {
@@ -88,6 +92,15 @@ export function createDeskGroup(desk: DeskWithOccupant): THREE.Group {
     leg.position.set(x, y, z);
     leg.castShadow = true;
     group.add(leg);
+
+    if (isStanding) {
+      // Motorized telescopic base collar
+      const collarGeo = new THREE.CylinderGeometry(0.045, 0.045, 0.35, 12);
+      const collarMat = new THREE.MeshStandardMaterial({ color: 0x111215, metalness: 0.9, roughness: 0.2 });
+      const collar = new THREE.Mesh(collarGeo, collarMat);
+      collar.position.set(x, 0.175, z);
+      group.add(collar);
+    }
   });
 
   // 3. Monitor Setup (Monitores em cima da mesa)
@@ -105,62 +118,65 @@ export function createDeskGroup(desk: DeskWithOccupant): THREE.Group {
     const standGeo = new THREE.CylinderGeometry(0.02, 0.05, 0.25, 8);
     const standMat = new THREE.MeshStandardMaterial({ color: 0x222225, metalness: 0.7 });
 
+    const standY = deskHeight + 0.13;
+    const screenY = deskHeight + 0.30;
+
     if (monitorCount === 1) {
       // 1 Monitor único centralizado
       const mStand = new THREE.Mesh(standGeo, standMat);
-      mStand.position.set(0, 0.88, -0.3);
+      mStand.position.set(0, standY, -0.3);
       group.add(mStand);
 
       const mScreen = new THREE.Mesh(screenGeo, screenMat);
-      mScreen.position.set(0, 1.05, -0.3);
+      mScreen.position.set(0, screenY, -0.3);
       mScreen.rotation.y = 0;
       group.add(mScreen);
     } else if (monitorCount === 2) {
       // 2 Monitores (configuração estéreo angular)
       // Monitor 1 (Esquerda)
       const m1Stand = new THREE.Mesh(standGeo, standMat);
-      m1Stand.position.set(-0.35, 0.88, -0.3);
+      m1Stand.position.set(-0.35, standY, -0.3);
       group.add(m1Stand);
 
       const m1Screen = new THREE.Mesh(screenGeo, screenMat);
-      m1Screen.position.set(-0.35, 1.05, -0.3);
+      m1Screen.position.set(-0.35, screenY, -0.3);
       m1Screen.rotation.y = 0.15;
       group.add(m1Screen);
 
       // Monitor 2 (Direita)
       const m2Stand = new THREE.Mesh(standGeo, standMat);
-      m2Stand.position.set(0.35, 0.88, -0.3);
+      m2Stand.position.set(0.35, standY, -0.3);
       group.add(m2Stand);
 
       const m2Screen = new THREE.Mesh(screenGeo, screenMat);
-      m2Screen.position.set(0.35, 1.05, -0.3);
+      m2Screen.position.set(0.35, screenY, -0.3);
       m2Screen.rotation.y = -0.15;
       group.add(m2Screen);
     } else {
       // 3 ou mais Monitores: Centro, Esquerda e Direita (Setup Ultrawide/Multi-tela)
       const mCenterStand = new THREE.Mesh(standGeo, standMat);
-      mCenterStand.position.set(0, 0.88, -0.3);
+      mCenterStand.position.set(0, standY, -0.3);
       group.add(mCenterStand);
 
       const mCenterScreen = new THREE.Mesh(screenGeo, screenMat);
-      mCenterScreen.position.set(0, 1.05, -0.3);
+      mCenterScreen.position.set(0, screenY, -0.3);
       group.add(mCenterScreen);
 
       const mLeftStand = new THREE.Mesh(standGeo, standMat);
-      mLeftStand.position.set(-0.62, 0.88, -0.26);
+      mLeftStand.position.set(-0.62, standY, -0.26);
       group.add(mLeftStand);
 
       const mLeftScreen = new THREE.Mesh(screenGeo, screenMat);
-      mLeftScreen.position.set(-0.62, 1.05, -0.26);
+      mLeftScreen.position.set(-0.62, screenY, -0.26);
       mLeftScreen.rotation.y = 0.28;
       group.add(mLeftScreen);
 
       const mRightStand = new THREE.Mesh(standGeo, standMat);
-      mRightStand.position.set(0.62, 0.88, -0.26);
+      mRightStand.position.set(0.62, standY, -0.26);
       group.add(mRightStand);
 
       const mRightScreen = new THREE.Mesh(screenGeo, screenMat);
-      mRightScreen.position.set(0.62, 1.05, -0.26);
+      mRightScreen.position.set(0.62, screenY, -0.26);
       mRightScreen.rotation.y = -0.28;
       group.add(mRightScreen);
     }
@@ -171,7 +187,7 @@ export function createDeskGroup(desk: DeskWithOccupant): THREE.Group {
     const dockGeo = new THREE.BoxGeometry(0.22, 0.03, 0.14);
     const dockMat = new THREE.MeshStandardMaterial({ color: 0x1f242d, metalness: 0.8, roughness: 0.3 });
     const dockMesh = new THREE.Mesh(dockGeo, dockMat);
-    dockMesh.position.set(0.65, 0.8, -0.25);
+    dockMesh.position.set(0.65, deskHeight + 0.05, -0.25);
     group.add(dockMesh);
   }
 
@@ -185,13 +201,13 @@ export function createDeskGroup(desk: DeskWithOccupant): THREE.Group {
       metalness: 0.8,
     });
     const panelMesh = new THREE.Mesh(panelGeo, panelMat);
-    panelMesh.position.set(0.85, 0.76, 0.52);
+    panelMesh.position.set(0.85, deskHeight + 0.01, 0.52);
     group.add(panelMesh);
   }
 
   // 4. Office Chair (Cadeira ergonômica)
   const chairGroup = new THREE.Group();
-  chairGroup.position.set(0, 0, 0.4);
+  chairGroup.position.set(0, 0, isStanding ? 0.65 : 0.4);
 
   // Chair seat
   const seatGeo = new THREE.BoxGeometry(0.55, 0.08, 0.5);
@@ -446,8 +462,10 @@ export function createAvatarSprite(desk: DeskWithOccupant): THREE.Sprite {
     ctx.save();
     ctx.fillStyle = '#64748b';
     ctx.font = '500 19px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.textAlign = 'left';
-    const featureText = desk.has_monitor ? 'Monitor Duplo • Check-in Ativo' : 'Check-in Confirmado';
+    const mCount = desk.monitors_count !== undefined ? desk.monitors_count : (desk.has_monitor ? 1 : 0);
+    const monitorLabel = mCount === 0 ? 'Sem Monitor' : (mCount === 1 ? '1 Monitor' : `${mCount} Monitores`);
+    const extraTag = desk.is_standing_desk ? ' • Standing' : (desk.has_docking_station ? ' • Dock Hub' : '');
+    const featureText = `${monitorLabel}${extraTag} • Check-in Ativo`;
     ctx.fillText(featureText, textX, 144);
     ctx.restore();
 

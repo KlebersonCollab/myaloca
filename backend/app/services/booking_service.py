@@ -191,9 +191,7 @@ class BookingService:
     @staticmethod
     async def get_user_bookings(db: AsyncSession, user_id: int) -> Sequence[Booking]:
         result = await db.execute(
-            select(Booking)
-            .where(Booking.user_id == user_id)
-            .order_by(Booking.start_time.desc())
+            select(Booking).where(Booking.user_id == user_id).order_by(Booking.start_time.desc())
         )
         return result.scalars().all()
 

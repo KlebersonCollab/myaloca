@@ -14,13 +14,10 @@ class Settings(BaseSettings):
 
     # Business Rules
     CHECKIN_TOLERANCE_MINUTES: int = 30  # Auto-release if no check-in after start_time + 30 min
-    CHECKIN_EARLY_MINUTES: int = 15     # Allow check-in up to 15 min before start_time
+    CHECKIN_EARLY_MINUTES: int = 15  # Allow check-in up to 15 min before start_time
 
     model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        case_sensitive=True,
-        extra="ignore"
+        env_file=".env", env_file_encoding="utf-8", case_sensitive=True, extra="ignore"
     )
 
 

@@ -404,6 +404,24 @@ watch(selectedZoneId, () => {
   loadData();
 });
 
+async function refreshDesks() {
+  try {
+    const fetchedDesks = await api.bookings.get3dOffice(
+      selectedZoneId.value || undefined,
+      selectedFloor.value !== null ? selectedFloor.value : undefined
+    );
+    desks.value = fetchedDesks;
+    renderDesksInScene();
+  } catch (err: any) {
+    console.error('Falha ao atualizar baias 3D:', err);
+  }
+}
+
+defineExpose({
+  refresh: refreshDesks,
+  loadData,
+});
+
 onMounted(async () => {
   initScene();
   await loadData();

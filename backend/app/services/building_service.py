@@ -112,9 +112,7 @@ class BuildingService:
         return building
 
     @staticmethod
-    async def get_buildings(
-        db: AsyncSession, company_id: int | None = None
-    ) -> Sequence[Building]:
+    async def get_buildings(db: AsyncSession, company_id: int | None = None) -> Sequence[Building]:
         query = select(Building).order_by(Building.name)
         if company_id is not None:
             query = query.where(Building.company_id == company_id)

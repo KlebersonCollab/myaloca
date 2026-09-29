@@ -208,4 +208,3 @@ async def release_desk(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"code": "RELEASE_ERROR", "message": err},
         ) from e
-

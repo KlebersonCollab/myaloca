@@ -22,9 +22,7 @@ class Booking(Base):
     start_time: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, index=True
     )
-    end_time: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, index=True
-    )
+    end_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     checkin_deadline: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, index=True
     )

@@ -161,40 +161,102 @@ async def init_initial_data(db: AsyncSession) -> None:
         await db.commit()
         await db.refresh(zone1)
 
-        # 8 Desks arranged across 2 rows of 4
-        # Row 1 (pos_z = -1.2, dual monitors)
-        for i in range(1, 5):
-            pos_x = round((i - 2.5) * 2.4, 2)
+        # Distinct individual equipment configurations for Floor 1 (Open Space Alpha)
+        floor1_specs = [
+            {
+                "code": "A-01",
+                "pos_x": -3.6,
+                "pos_z": -1.2,
+                "rot": 0.0,
+                "monitors": 1,
+                "dock": False,
+                "standing": False,
+                "equip": "Monitor Dell 24 + Teclado/Mouse",
+            },
+            {
+                "code": "A-02",
+                "pos_x": -1.2,
+                "pos_z": -1.2,
+                "rot": 0.0,
+                "monitors": 2,
+                "dock": True,
+                "standing": False,
+                "equip": "Monitor Duplo Dell 27 + USB-C Hub",
+            },
+            {
+                "code": "A-03",
+                "pos_x": 1.2,
+                "pos_z": -1.2,
+                "rot": 0.0,
+                "monitors": 0,
+                "dock": False,
+                "standing": False,
+                "equip": "Sem Monitor (Espaço Aberto / BYOD)",
+            },
+            {
+                "code": "A-04",
+                "pos_x": 3.6,
+                "pos_z": -1.2,
+                "rot": 0.0,
+                "monitors": 3,
+                "dock": True,
+                "standing": False,
+                "equip": "Setup Triple-Screen 24 + Dock Thunderbolt",
+            },
+            {
+                "code": "A-05",
+                "pos_x": -3.6,
+                "pos_z": 1.2,
+                "rot": 180.0,
+                "monitors": 1,
+                "dock": True,
+                "standing": False,
+                "equip": "Monitor Único 27 + Dock Dell",
+            },
+            {
+                "code": "A-06",
+                "pos_x": -1.2,
+                "pos_z": 1.2,
+                "rot": 180.0,
+                "monitors": 2,
+                "dock": True,
+                "standing": True,
+                "equip": "Mesa Elétrica Regulável + 2 Monitores LG 27",
+            },
+            {
+                "code": "A-07",
+                "pos_x": 1.2,
+                "pos_z": 1.2,
+                "rot": 180.0,
+                "monitors": 0,
+                "dock": True,
+                "standing": False,
+                "equip": "Dock Station Thunderbolt para Laptop",
+            },
+            {
+                "code": "A-08",
+                "pos_x": 3.6,
+                "pos_z": 1.2,
+                "rot": 180.0,
+                "monitors": 1,
+                "dock": False,
+                "standing": True,
+                "equip": "Mesa Regulável + Monitor Curvo 34",
+            },
+        ]
+        for spec in floor1_specs:
             desk = Desk(
-                code=f"A-0{i}",
+                code=spec["code"],
                 zone_id=zone1.id,
-                pos_x=pos_x,
+                pos_x=spec["pos_x"],
                 pos_y=0.0,
-                pos_z=-1.2,
-                rotation_y=0.0,
-                has_monitor=True,
-                monitors_count=2,
-                has_docking_station=True,
-                extra_equipment="Monitor Duplo Dell 27",
-                qr_code_hash=DeskService.generate_immutable_qr_hash(),
-                status="DISPONIVEL",
-            )
-            db.add(desk)
-
-        # Row 2 (pos_z = 1.2, single monitor)
-        for i in range(1, 5):
-            pos_x = round((i - 2.5) * 2.4, 2)
-            desk = Desk(
-                code=f"A-0{i + 4}",
-                zone_id=zone1.id,
-                pos_x=pos_x,
-                pos_y=0.0,
-                pos_z=1.2,
-                rotation_y=180.0,
-                has_monitor=True,
-                monitors_count=1,
-                has_docking_station=False,
-                extra_equipment="Monitor Único 24",
+                pos_z=spec["pos_z"],
+                rotation_y=spec["rot"],
+                has_monitor=spec["monitors"] > 0,
+                monitors_count=spec["monitors"],
+                has_docking_station=spec["dock"],
+                is_standing_desk=spec["standing"],
+                extra_equipment=spec["equip"],
                 qr_code_hash=DeskService.generate_immutable_qr_hash(),
                 status="DISPONIVEL",
             )
@@ -211,9 +273,141 @@ async def init_initial_data(db: AsyncSession) -> None:
         db.add(zone1)
         await db.commit()
 
+        # Sync existing Floor 1 desks to distinct equipment profiles if using legacy uniform data
+        floor1_specs = [
+            {
+                "code": "A-01",
+                "monitors": 1,
+                "dock": False,
+                "standing": False,
+                "equip": "Monitor Dell 24 + Teclado/Mouse",
+            },
+            {
+                "code": "A-02",
+                "monitors": 2,
+                "dock": True,
+                "standing": False,
+                "equip": "Monitor Duplo Dell 27 + USB-C Hub",
+            },
+            {
+                "code": "A-03",
+                "monitors": 0,
+                "dock": False,
+                "standing": False,
+                "equip": "Sem Monitor (Espaço Aberto / BYOD)",
+            },
+            {
+                "code": "A-04",
+                "monitors": 3,
+                "dock": True,
+                "standing": False,
+                "equip": "Setup Triple-Screen 24 + Dock Thunderbolt",
+            },
+            {
+                "code": "A-05",
+                "monitors": 1,
+                "dock": True,
+                "standing": False,
+                "equip": "Monitor Único 27 + Dock Dell",
+            },
+            {
+                "code": "A-06",
+                "monitors": 2,
+                "dock": True,
+                "standing": True,
+                "equip": "Mesa Elétrica Regulável + 2 Monitores LG 27",
+            },
+            {
+                "code": "A-07",
+                "monitors": 0,
+                "dock": True,
+                "standing": False,
+                "equip": "Dock Station Thunderbolt para Laptop",
+            },
+            {
+                "code": "A-08",
+                "monitors": 1,
+                "dock": False,
+                "standing": True,
+                "equip": "Mesa Regulável + Monitor Curvo 34",
+            },
+        ]
+        for spec in floor1_specs:
+            q_d = select(Desk).where(Desk.code == spec["code"])
+            existing_d = (await db.execute(q_d)).scalar_one_or_none()
+            if existing_d and (
+                existing_d.extra_equipment
+                in ["Monitor Duplo Dell 27", "Monitor Único 24", None, ""]
+            ):
+                existing_d.monitors_count = spec["monitors"]
+                existing_d.has_monitor = spec["monitors"] > 0
+                existing_d.has_docking_station = spec["dock"]
+                existing_d.is_standing_desk = spec["standing"]
+                existing_d.extra_equipment = spec["equip"]
+                db.add(existing_d)
+        await db.commit()
+
     # Floor 2: 8 columns x 4 rows (Engenharia - dynamic 8 desks per row!)
     q_z2 = select(Zone).where(Zone.floor == 2).limit(1)
     zone2 = (await db.execute(q_z2)).scalar_one_or_none()
+    floor2_specs = [
+        {
+            "code": "ENG-01",
+            "monitors": 2,
+            "dock": True,
+            "standing": False,
+            "equip": "Monitor Duplo Dell 27 + Dock USB-C",
+        },
+        {
+            "code": "ENG-02",
+            "monitors": 3,
+            "dock": True,
+            "standing": True,
+            "equip": "Mesa Elétrica + Triple Display 27",
+        },
+        {
+            "code": "ENG-03",
+            "monitors": 1,
+            "dock": True,
+            "standing": False,
+            "equip": "Monitor Ultrawide 34 + Dock Dell",
+        },
+        {
+            "code": "ENG-04",
+            "monitors": 2,
+            "dock": False,
+            "standing": True,
+            "equip": "Mesa Regulável + Dual Monitor 24",
+        },
+        {
+            "code": "ENG-05",
+            "monitors": 0,
+            "dock": True,
+            "standing": False,
+            "equip": "Bancada Limpa BYOD + Docking Station",
+        },
+        {
+            "code": "ENG-06",
+            "monitors": 1,
+            "dock": False,
+            "standing": False,
+            "equip": "Monitor Standard 24",
+        },
+        {
+            "code": "ENG-07",
+            "monitors": 2,
+            "dock": True,
+            "standing": False,
+            "equip": "Setup Dev Pro Dual 27",
+        },
+        {
+            "code": "ENG-08",
+            "monitors": 3,
+            "dock": True,
+            "standing": False,
+            "equip": "Setup Data Science Multi-Monitor",
+        },
+    ]
     if not zone2:
         zone2 = Zone(
             building_id=building.id,
@@ -229,20 +423,20 @@ async def init_initial_data(db: AsyncSession) -> None:
         await db.refresh(zone2)
 
         # 8 Desks aligned along Row 1 of an 8-column grid: (c - 3.5) * 2.4
-        for i in range(8):
+        for i, spec in enumerate(floor2_specs):
             pos_x = round((i - 3.5) * 2.4, 2)
-            m_count = 2 if i < 4 else 1
             desk = Desk(
-                code=f"ENG-0{i + 1}",
+                code=spec["code"],
                 zone_id=zone2.id,
                 pos_x=pos_x,
                 pos_y=0.0,
                 pos_z=-1.2,
                 rotation_y=0.0,
-                has_monitor=True,
-                monitors_count=m_count,
-                has_docking_station=True,
-                extra_equipment="Setup Dev Pro" if m_count == 2 else "Setup Dev Standard",
+                has_monitor=spec["monitors"] > 0,
+                monitors_count=spec["monitors"],
+                has_docking_station=spec["dock"],
+                is_standing_desk=spec["standing"],
+                extra_equipment=spec["equip"],
                 qr_code_hash=DeskService.generate_immutable_qr_hash(),
                 status="DISPONIVEL",
             )
@@ -300,9 +494,54 @@ async def init_initial_data(db: AsyncSession) -> None:
         db.add(zone2)
         await db.commit()
 
+        # Sync existing Floor 2 desks to distinct equipment profiles if using legacy uniform data
+        for spec in floor2_specs:
+            q_d = select(Desk).where(Desk.code == spec["code"])
+            existing_d = (await db.execute(q_d)).scalar_one_or_none()
+            if existing_d and (
+                existing_d.extra_equipment in ["Setup Dev Pro", "Setup Dev Standard", None, ""]
+            ):
+                existing_d.monitors_count = spec["monitors"]
+                existing_d.has_monitor = spec["monitors"] > 0
+                existing_d.has_docking_station = spec["dock"]
+                existing_d.is_standing_desk = spec["standing"]
+                existing_d.extra_equipment = spec["equip"]
+                db.add(existing_d)
+        await db.commit()
+
     # Floor 3: 6 columns x 3 rows (Diretoria executiva)
     q_z3 = select(Zone).where(Zone.floor == 3).limit(1)
     zone3 = (await db.execute(q_z3)).scalar_one_or_none()
+    floor3_specs = [
+        {
+            "code": "DIR-01",
+            "monitors": 2,
+            "dock": True,
+            "standing": True,
+            "equip": "Mesa Elétrica Regulável + Ultrawide 38",
+        },
+        {
+            "code": "DIR-02",
+            "monitors": 1,
+            "dock": True,
+            "standing": True,
+            "equip": "Mesa Executiva Regulável + Monitor 32 4K",
+        },
+        {
+            "code": "DIR-03",
+            "monitors": 3,
+            "dock": True,
+            "standing": True,
+            "equip": "Mesa Elétrica + Triple Monitor Trading/Analytics",
+        },
+        {
+            "code": "DIR-04",
+            "monitors": 0,
+            "dock": True,
+            "standing": False,
+            "equip": "Mesa Executiva Atendimento + Hub Carregador",
+        },
+    ]
     if not zone3:
         zone3 = Zone(
             building_id=building.id,
@@ -317,20 +556,20 @@ async def init_initial_data(db: AsyncSession) -> None:
         await db.commit()
         await db.refresh(zone3)
 
-        for i in range(1, 5):
-            pos_x = round((i - 2.5) * 2.4, 2)
+        for i, spec in enumerate(floor3_specs):
+            pos_x = round((i + 1 - 2.5) * 2.4, 2)
             desk = Desk(
-                code=f"DIR-0{i}",
+                code=spec["code"],
                 zone_id=zone3.id,
                 pos_x=pos_x,
                 pos_y=0.0,
                 pos_z=-1.2,
                 rotation_y=0.0,
-                has_monitor=True,
-                monitors_count=2,
-                has_docking_station=True,
-                is_standing_desk=True,
-                extra_equipment="Mesa Elétrica Regulável + Ultrawide 38",
+                has_monitor=spec["monitors"] > 0,
+                monitors_count=spec["monitors"],
+                has_docking_station=spec["dock"],
+                is_standing_desk=spec["standing"],
+                extra_equipment=spec["equip"],
                 qr_code_hash=DeskService.generate_immutable_qr_hash(),
                 status="DISPONIVEL",
             )
@@ -360,11 +599,26 @@ async def init_initial_data(db: AsyncSession) -> None:
     else:
         if not zone3.building_id:
             zone3.building_id = building.id
-        if not zone3.grid_cols:
+        if not zone3.grid_cols or zone3.grid_cols == 8:
             zone3.grid_cols = 6
         if not zone3.grid_rows:
             zone3.grid_rows = 3
         db.add(zone3)
+        await db.commit()
+
+        # Sync existing Floor 3 desks to distinct equipment profiles if using legacy uniform data
+        for spec in floor3_specs:
+            q_d = select(Desk).where(Desk.code == spec["code"])
+            existing_d = (await db.execute(q_d)).scalar_one_or_none()
+            if existing_d and (
+                existing_d.extra_equipment in ["Mesa Elétrica Regulável + Ultrawide 38", None, ""]
+            ):
+                existing_d.monitors_count = spec["monitors"]
+                existing_d.has_monitor = spec["monitors"] > 0
+                existing_d.has_docking_station = spec["dock"]
+                existing_d.is_standing_desk = spec["standing"]
+                existing_d.extra_equipment = spec["equip"]
+                db.add(existing_d)
         await db.commit()
 
     # ============================================================

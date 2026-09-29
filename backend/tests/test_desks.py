@@ -465,6 +465,70 @@ async def test_desk_equipment_editing_and_repositioning(client: AsyncClient):
     assert desk_3d["extra_equipment"] == "Monitor Ultrawide 34"
 
 
+@pytest.mark.asyncio
+async def test_zone_matrix_resize_adapts_existing_desks(client: AsyncClient):
+    admin_token = await get_auth_token(client, "admin_matrix_resize@myaloca.com", "admin")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
 
+    # 1. Create Zone with 6 cols x 4 rows
+    z_res = await client.post(
+        "/api/v1/zones",
+        json={"name": "Zona Matriz Adaptativa", "floor": 1, "grid_cols": 6, "grid_rows": 4},
+        headers=admin_headers,
+    )
+    assert z_res.status_code == 201
+    zone_id = z_res.json()["id"]
 
+    # 2. Place Desk 1 at (Row 1, Col 1) -> pos_x = -3.6, pos_z = -1.2 in 6x4
+    d1_res = await client.post(
+        "/api/v1/desks",
+        json={
+            "code": "ADAPT-01",
+            "zone_id": zone_id,
+            "pos_x": -3.6,
+            "pos_y": 0.0,
+            "pos_z": -1.2,
+        },
+        headers=admin_headers,
+    )
+    assert d1_res.status_code == 201
+    d1_id = d1_res.json()["id"]
 
+    # 3. Place Desk 2 at (Row 2, Col 3) -> pos_x = 1.2, pos_z = 1.2 in 6x4
+    d2_res = await client.post(
+        "/api/v1/desks",
+        json={
+            "code": "ADAPT-02",
+            "zone_id": zone_id,
+            "pos_x": 1.2,
+            "pos_y": 0.0,
+            "pos_z": 1.2,
+        },
+        headers=admin_headers,
+    )
+    assert d2_res.status_code == 201
+    d2_id = d2_res.json()["id"]
+
+    # 4. Resize Zone Matrix to 8 cols x 5 rows
+    update_res = await client.put(
+        f"/api/v1/zones/{zone_id}",
+        json={"grid_cols": 8, "grid_rows": 5},
+        headers=admin_headers,
+    )
+    assert update_res.status_code == 200
+    assert update_res.json()["grid_cols"] == 8
+    assert update_res.json()["grid_rows"] == 5
+
+    # 5. Fetch updated desks and assert coordinates adapted to the new 8x5 grid
+    # For 8x5: origin center is col 3.5, row 2.0
+    # Cell (r=1, c=1) -> pos_x = (1 - 3.5) * 2.4 = -6.0, pos_z = (1 - 2.0) * 2.4 = -2.4
+    # Cell (r=2, c=3) -> pos_x = (3 - 3.5) * 2.4 = -1.2, pos_z = (2 - 2.0) * 2.4 = 0.0
+    d1_get = await client.get(f"/api/v1/desks/{d1_id}", headers=admin_headers)
+    assert d1_get.status_code == 200
+    assert d1_get.json()["pos_x"] == -6.0
+    assert d1_get.json()["pos_z"] == -2.4
+
+    d2_get = await client.get(f"/api/v1/desks/{d2_id}", headers=admin_headers)
+    assert d2_get.status_code == 200
+    assert d2_get.json()["pos_x"] == -1.2
+    assert d2_get.json()["pos_z"] == 0.0

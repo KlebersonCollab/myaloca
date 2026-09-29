@@ -85,8 +85,49 @@ class DeskService:
             if existing:
                 raise ValueError("ZONE_NAME_EXISTS")
 
+        old_cols = zone.grid_cols or 6
+        old_rows = zone.grid_rows or 4
+        new_cols = update_data.get("grid_cols", old_cols)
+        new_rows = update_data.get("grid_rows", old_rows)
+        grid_changed = (new_cols != old_cols) or (new_rows != old_rows)
+
         for field, val in update_data.items():
             setattr(zone, field, val)
+
+        if grid_changed:
+            q_desks = select(Desk).where(Desk.zone_id == zone_id)
+            desks = (await db.execute(q_desks)).scalars().all()
+
+            occupied_cells: set[tuple[int, int]] = set()
+            for d in desks:
+                # 1. Reverse-engineer logical (col, row) in the old grid
+                old_c = round((d.pos_x / 2.4) + (old_cols - 1) / 2)
+                old_r = round((d.pos_z / 2.4) + (old_rows - 1) / 2)
+
+                # 2. Clamp into bounds of new grid
+                target_c = max(0, min(new_cols - 1, old_c))
+                target_r = max(0, min(new_rows - 1, old_r))
+
+                # 3. Collision resolution: if cell is already occupied, find nearest free cell
+                if (target_r, target_c) in occupied_cells:
+                    best_cell = None
+                    min_dist = float("inf")
+                    for r in range(new_rows):
+                        for c in range(new_cols):
+                            if (r, c) not in occupied_cells:
+                                dist = (r - old_r) ** 2 + (c - old_c) ** 2
+                                if dist < min_dist:
+                                    min_dist = dist
+                                    best_cell = (r, c)
+                    if best_cell:
+                        target_r, target_c = best_cell
+
+                occupied_cells.add((target_r, target_c))
+
+                # 4. Re-calculate new centered coordinates for the new grid
+                d.pos_x = round((target_c - (new_cols - 1) / 2) * 2.4, 2)
+                d.pos_z = round((target_r - (new_rows - 1) / 2) * 2.4, 2)
+                db.add(d)
 
         db.add(zone)
         await db.commit()
@@ -283,5 +324,3 @@ class DeskService:
         await db.commit()
         await db.refresh(desk)
         return desk
-
-

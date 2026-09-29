@@ -269,9 +269,18 @@ function getDeskAtGridCell(row: number, col: number): Desk | undefined {
   const targetX = Number(((col - (activeGridCols.value - 1) / 2) * 2.4).toFixed(2));
   const targetZ = Number(((row - (activeGridRows.value - 1) / 2) * 2.4).toFixed(2));
 
-  return filteredDesks.value.find((d) => {
-    return Math.abs(d.pos_x - targetX) < 1.0 && Math.abs(d.pos_z - targetZ) < 1.0;
-  });
+  let closestDesk: Desk | undefined;
+  let minDistance = 1.25; // Half-cell boundary tolerance (1.2m)
+
+  for (const d of filteredDesks.value) {
+    const dist = Math.hypot(d.pos_x - targetX, d.pos_z - targetZ);
+    if (dist < minDistance) {
+      minDistance = dist;
+      closestDesk = d;
+    }
+  }
+
+  return closestDesk;
 }
 
 function handleDragStart(event: DragEvent, desk: Desk) {
@@ -1374,8 +1383,8 @@ onMounted(() => {
               <td class="px-4 py-3.5">
                 <div class="flex flex-col space-y-0.5 text-ink-subtle text-xs">
                   <div class="flex items-center space-x-1.5 flex-wrap gap-y-1">
-                    <span v-if="(d.monitors_count ?? 1) > 0" class="text-primary font-medium">
-                      {{ d.monitors_count ?? (d.has_monitor ? 2 : 0) }} {{ (d.monitors_count ?? 2) === 1 ? 'Monitor' : 'Monitores' }}
+                    <span v-if="(d.monitors_count !== undefined ? d.monitors_count : (d.has_monitor ? 1 : 0)) > 0" class="text-primary font-medium">
+                      {{ d.monitors_count !== undefined ? d.monitors_count : (d.has_monitor ? 1 : 0) }} {{ (d.monitors_count !== undefined ? d.monitors_count : (d.has_monitor ? 1 : 0)) === 1 ? 'Monitor' : 'Monitores' }}
                     </span>
                     <span v-else class="text-ink-subtle">Sem Monitor</span>
                     <span v-if="d.has_docking_station" class="text-amber-400 text-[10px] font-semibold bg-amber-400/10 px-1.5 py-0.5 rounded border border-amber-400/20">Dock</span>
