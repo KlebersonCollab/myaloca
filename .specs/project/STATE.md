@@ -1,11 +1,11 @@
 # Project State & Context
 
 ## 🏁 Session Status
-- **Current Task**: Conclusão da Feature 11 (Planta Dinâmica Configurável por Pavimento, Edição Granular de Equipamentos e Drag & Drop de Baias 2D/3D).
-- **Progress**: 100% das Features 01 a 11 implementadas e auditadas por sensores (33/33 testes pytest, linter ruff zero erros, build de produção frontend aprovado, integridade SDD 100%).
+- **Current Task**: Conclusão da Feature 12 (README Central Completo, Galeria Visual com Imagens Reais e Publicação GitHub).
+- **Progress**: 100% das Features 01 a 12 implementadas e auditadas por sensores (34/34 testes pytest, linter ruff zero erros, build de produção frontend aprovado, integridade SDD 100%, spec drift detector 100% aprovado).
 - **Next Steps**:
-  1. Apresentar ao usuário as capacidades de redimensionamento da matriz da planta, edição de equipamentos (monitores, dock, standing desk) e o recurso de drag & drop tanto na gestão 2D quanto no mapa 3D.
-  2. Acompanhar feedback do usuário e potenciais novos refinamentos no ecossistema MyAloca.
+  1. Apresentar ao usuário o README central estruturado com todas as 11 imagens reais de funcionalidades em alta resolução.
+  2. Fornecer instruções para push no repositório remoto do GitHub.
 
 ## 💡 Decisions Log
 - **2026-09-28 - Backend Stack**: FastAPI Async com SQLAlchemy 2.0 (`aiosqlite` para dev local e `asyncpg` para PostgreSQL em produção via URL de conexão desacoplada).
@@ -28,6 +28,7 @@
 - **2026-09-28 - Edição Granular de Equipamentos e Drag & Drop 2D/3D (ADR 0010)**: Suporte a `monitors_count` (0 a 3), docking station, standing desk e `extra_equipment` no backend e no frontend com renderização fiel em Three.js (0 monitores, 1 monitor central ou 2 monitores estéreo angulados). Implementado Drag & Drop 2D via HTML5 Drag API na planta do `AdminDesksView.vue` e Drag & Drop 3D interativo via Raycasting sobre plano com snap de 0.6m em `OfficeCanvas3D.vue`, além de formulário de edição direta de baia ao clicar no mapa 3D em `BookingModal.vue`.
 - **2026-09-29 - Isolamento de Equipamentos 3D & Refresh Não-Destrutivo**: Resolução da ilusão de replicação causada por dados idênticos de seed (onde fileiras inteiras continham 2 monitores e dock por padrão). Criada matriz de seed realista e diversificada para cada baia (0, 1, 2 e 3 monitores, docking stations e standing desks distintos por posto). No Three.js, mesas reguláveis (`is_standing_desk`) foram fisicamente elevadas para `y=1.08m` com colunas telescópicas motorizadas, tornando-as imediatamente identificáveis. Substituído o ciclo destrutivo de `:key="officeKey"` no `App.vue` por `refresh()` imperativo no `OfficeCanvas3D.vue`, preservando a câmera, o ângulo e o pavimento selecionado.
 - **2026-09-29 - Realinhamento Adaptativo de Baias na Redimensão de Matriz**: Ao alterar as dimensões da grade de um pavimento (ex: de 6x4 para 8x5 ou 5x3), o backend (`DeskService.update_zone`) re-ancora automaticamente todas as baias existentes para suas respectivas células lógicas na nova matriz, recalculando as coordenadas centradas (X, Z), aplicando clamping seguro e resolução de colisões sem perda de baias. No frontend (`AdminDesksView.vue`), a resolução de células por distância euclidiana mínima (Voronoi) garante que nenhuma baia desapareça da planta 2D ao mudar entre matrizes pares e ímpares.
+- **2026-09-29 - Documentação Central & Galeria Visual (Feature 12)**: Criação de README central corporativo com 11 capturas de tela reais de alta definição capturadas da aplicação em execução via script automatizado Playwright/Puppeteer (`scripts/capture-screenshots.js`), licença MIT, especificação técnica, credenciais de demonstração e instruções de inicialização rápida.
 
 ## 🚧 Active Blockers
 - N/A.
