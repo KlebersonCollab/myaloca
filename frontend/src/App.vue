@@ -37,6 +37,10 @@ function handleBookingCreated() {
   currentTab.value = 'my-bookings';
 }
 
+function handleDeskUpdated() {
+  officeKey.value++; // Refresh 3D scene without switching away to my-bookings
+}
+
 function handleCheckinSuccess() {
   officeKey.value++; // Refresh 3D scene
 }
@@ -79,6 +83,7 @@ onMounted(async () => {
       :is-open="isBookingModalOpen"
       @close="isBookingModalOpen = false"
       @booking-created="handleBookingCreated"
+      @desk-updated="handleDeskUpdated"
     />
 
     <QRScannerModal

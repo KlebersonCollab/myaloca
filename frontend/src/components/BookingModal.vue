@@ -30,6 +30,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'close'): void;
   (e: 'booking-created'): void;
+  (e: 'desk-updated'): void;
 }>();
 
 const { currentUser } = useAuth();
@@ -149,7 +150,7 @@ async function handleReleaseFromModal() {
     await api.desks.release(props.desk.id);
     successMessage.value = `Baia ${props.desk.code} liberada com sucesso! O assento já está disponível.`;
     setTimeout(() => {
-      emit('booking-created');
+      emit('desk-updated');
       emit('close');
     }, 1200);
   } catch (err: any) {
@@ -169,7 +170,7 @@ const canManageDesk = computed(() => {
 
 const editForm = ref({
   code: '',
-  space_type: 'BAIA_TRABALHO' as SpaceType,
+  space_type: 'BAIA' as SpaceType,
   capacity: 1,
   monitors_count: 1,
   has_docking_station: false,
@@ -183,9 +184,11 @@ const editForm = ref({
 
 function initEditForm() {
   if (!props.desk) return;
+  const rawType = (props.desk.space_type as string) || 'BAIA';
+  const normalizedType: SpaceType = rawType === 'BAIA_TRABALHO' ? 'BAIA' : (rawType as SpaceType);
   editForm.value = {
     code: props.desk.code || '',
-    space_type: (props.desk.space_type as SpaceType) || 'BAIA_TRABALHO',
+    space_type: normalizedType,
     capacity: props.desk.capacity || 1,
     monitors_count: props.desk.monitors_count !== undefined ? props.desk.monitors_count : (props.desk.has_monitor ? 1 : 0),
     has_docking_station: !!props.desk.has_docking_station,
@@ -205,15 +208,16 @@ async function handleSaveDesk() {
   successMessage.value = null;
 
   try {
+    const mCount = Number(editForm.value.monitors_count);
     const updated = await api.desks.update(props.desk.id, {
       code: editForm.value.code,
       space_type: editForm.value.space_type,
       capacity: Number(editForm.value.capacity),
-      monitors_count: Number(editForm.value.monitors_count),
-      has_monitor: Number(editForm.value.monitors_count) > 0,
+      monitors_count: mCount,
+      has_monitor: mCount > 0,
       has_docking_station: editForm.value.has_docking_station,
       is_standing_desk: editForm.value.is_standing_desk,
-      extra_equipment: editForm.value.extra_equipment || undefined,
+      extra_equipment: editForm.value.extra_equipment ? editForm.value.extra_equipment.trim() : null,
       max_duration_minutes: editForm.value.max_duration_minutes ? Number(editForm.value.max_duration_minutes) : null,
       required_role: editForm.value.required_role || null,
       pos_x: Number(editForm.value.pos_x),
@@ -224,7 +228,7 @@ async function handleSaveDesk() {
     successMessage.value = 'Equipamentos e propriedades da baia atualizados com sucesso!';
     setTimeout(() => {
       isEditing.value = false;
-      emit('booking-created');
+      emit('desk-updated');
     }, 900);
   } catch (err: any) {
     errorMessage.value = err.message || 'Erro ao atualizar dados da baia.';
@@ -365,7 +369,7 @@ watch(
                 v-model="editForm.space_type"
                 class="w-full bg-surface-2 border border-hairline rounded-md px-3 py-2 text-sm text-ink focus:outline-none focus:border-primary"
               >
-                <option value="BAIA_TRABALHO">Baia de Trabalho</option>
+                <option value="BAIA">Baia de Trabalho</option>
                 <option value="SALA_REUNIAO">Sala de Reunião</option>
                 <option value="CABINE_FOCUS">Cabine Focus</option>
               </select>
@@ -547,16 +551,26 @@ watch(
         </div>
 
         <!-- Desk Features -->
-        <div class="flex items-center space-x-4 text-xs text-ink-muted bg-surface-2 p-2.5 rounded-lg border border-hairline">
-          <div class="flex items-center space-x-1.5" :class="desk.has_monitor ? 'text-primary' : 'text-ink-tertiary'">
-            <Monitor class="w-4 h-4" />
-            <span>{{ desk.has_monitor ? 'Monitor Duplo' : 'Sem Monitor' }}</span>
+        <div class="space-y-2 bg-surface-2 p-2.5 rounded-lg border border-hairline text-xs">
+          <div class="flex items-center space-x-3 text-ink-muted flex-wrap gap-y-1">
+            <div class="flex items-center space-x-1.5" :class="(desk.monitors_count ?? (desk.has_monitor ? 1 : 0)) > 0 ? 'text-primary font-medium' : 'text-ink-tertiary'">
+              <Monitor class="w-4 h-4" />
+              <span>
+                {{ (desk.monitors_count ?? (desk.has_monitor ? 1 : 0)) === 0
+                    ? 'Sem Monitor'
+                    : ((desk.monitors_count ?? (desk.has_monitor ? 1 : 0)) === 1 ? '1 Monitor' : `${desk.monitors_count} Monitores`) }}
+              </span>
+            </div>
+            <div v-if="desk.has_docking_station" class="text-amber-400 font-medium">
+              • Docking Station
+            </div>
+            <div v-if="desk.is_standing_desk" class="text-cyan-400 font-medium">
+              • Standing Desk
+            </div>
           </div>
-          <div v-if="desk.has_docking_station" class="text-emerald-400">
-            • Docking Station
-          </div>
-          <div v-if="desk.is_standing_desk" class="text-purple-400">
-            • Standing Desk
+          <div v-if="desk.extra_equipment" class="text-[11px] text-ink-subtle pt-1 border-t border-hairline/60 flex items-center space-x-1">
+            <span class="text-ink-tertiary">Equipamentos extras:</span>
+            <span class="text-ink font-medium">{{ desk.extra_equipment }}</span>
           </div>
         </div>
 

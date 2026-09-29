@@ -617,7 +617,7 @@ async function handleUpdateDesk() {
       has_monitor: mCount > 0,
       has_docking_station: editDeskForm.value.has_docking_station,
       is_standing_desk: editDeskForm.value.is_standing_desk,
-      extra_equipment: editDeskForm.value.extra_equipment || null,
+      extra_equipment: editDeskForm.value.extra_equipment ? editDeskForm.value.extra_equipment.trim() : null,
     });
     editingDesk.value = null;
     await loadData();

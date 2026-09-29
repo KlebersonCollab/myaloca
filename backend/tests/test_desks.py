@@ -456,6 +456,14 @@ async def test_desk_equipment_editing_and_repositioning(client: AsyncClient):
     assert zero_res.json()["monitors_count"] == 0
     assert zero_res.json()["has_monitor"] is False
 
+    # 4. Verify 3D office projection reflects equipment changes
+    office_res = await client.get("/api/v1/bookings/3d-office", headers=admin_headers)
+    assert office_res.status_code == 200
+    desk_3d = next(d for d in office_res.json() if d["id"] == desk_id)
+    assert desk_3d["monitors_count"] == 0
+    assert desk_3d["has_monitor"] is False
+    assert desk_3d["extra_equipment"] == "Monitor Ultrawide 34"
+
 
 
 

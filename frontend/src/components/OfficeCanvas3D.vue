@@ -495,16 +495,22 @@ onBeforeUnmount(() => {
         </div>
 
         <!-- Specs & Facilities -->
-        <div class="flex items-center space-x-2 pt-1.5 border-t border-hairline/60 text-[10px] text-ink-muted">
-          <span v-if="hoveredDesk.has_monitor" class="flex items-center space-x-1">
-            <span>🖥️ Monitor duplo</span>
+        <div class="flex items-center space-x-2 pt-1.5 border-t border-hairline/60 text-[10px] text-ink-muted flex-wrap gap-y-1">
+          <span v-if="(hoveredDesk.monitors_count ?? (hoveredDesk.has_monitor ? 1 : 0)) > 0" class="flex items-center space-x-1 text-primary font-medium">
+            <span>🖥️ {{ (hoveredDesk.monitors_count ?? (hoveredDesk.has_monitor ? 1 : 0)) === 1 ? '1 Monitor' : `${hoveredDesk.monitors_count} Monitores` }}</span>
           </span>
-          <span v-if="hoveredDesk.has_docking_station" class="flex items-center space-x-1">
-            <span>🔌 Docking USB-C</span>
+          <span v-else class="text-ink-subtle">
+            🖥️ Sem monitor
           </span>
-          <span v-if="hoveredDesk.is_standing_desk" class="flex items-center space-x-1">
-            <span>⬆️ Altura regulável</span>
+          <span v-if="hoveredDesk.has_docking_station" class="flex items-center space-x-1 text-amber-400">
+            <span>🔌 Dock</span>
           </span>
+          <span v-if="hoveredDesk.is_standing_desk" class="flex items-center space-x-1 text-cyan-400">
+            <span>⬆️ Standing</span>
+          </span>
+        </div>
+        <div v-if="hoveredDesk.extra_equipment" class="text-[10px] text-ink-subtle truncate pt-0.5" :title="hoveredDesk.extra_equipment">
+          ✨ {{ hoveredDesk.extra_equipment }}
         </div>
 
         <div class="text-[10px] text-primary/90 font-medium pt-0.5">

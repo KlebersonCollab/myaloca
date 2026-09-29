@@ -81,8 +81,8 @@ async def create_desks_batch(
 async def list_desks(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
-    zone_id: int | None = Query(None, description="Filtrar por Zona"),
-    floor: int | None = Query(None, description="Filtrar por Andar"),
+    zone_id: Annotated[int | None, Query(description="Filtrar por Zona")] = None,
+    floor: Annotated[int | None, Query(description="Filtrar por Andar")] = None,
 ) -> Sequence[Desk]:
     query = select(Desk)
     if zone_id is not None:
