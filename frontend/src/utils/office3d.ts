@@ -91,7 +91,12 @@ export function createDeskGroup(desk: DeskWithOccupant): THREE.Group {
   });
 
   // 3. Monitor Setup (Monitores em cima da mesa)
-  if (desk.has_monitor) {
+  const monitorCount =
+    desk.monitors_count !== undefined
+      ? desk.monitors_count
+      : (desk.has_monitor ? 2 : 0);
+
+  if (monitorCount > 0) {
     const screenGeo = new THREE.BoxGeometry(0.7, 0.4, 0.02);
     const screenMat = new THREE.MeshStandardMaterial({
       color: 0x050505,
@@ -100,25 +105,47 @@ export function createDeskGroup(desk: DeskWithOccupant): THREE.Group {
     const standGeo = new THREE.CylinderGeometry(0.02, 0.05, 0.25, 8);
     const standMat = new THREE.MeshStandardMaterial({ color: 0x222225, metalness: 0.7 });
 
-    // Monitor 1 (Esquerda)
-    const m1Stand = new THREE.Mesh(standGeo, standMat);
-    m1Stand.position.set(-0.35, 0.88, -0.3);
-    group.add(m1Stand);
+    if (monitorCount === 1) {
+      // 1 Monitor único centralizado
+      const mStand = new THREE.Mesh(standGeo, standMat);
+      mStand.position.set(0, 0.88, -0.3);
+      group.add(mStand);
 
-    const m1Screen = new THREE.Mesh(screenGeo, screenMat);
-    m1Screen.position.set(-0.35, 1.05, -0.3);
-    m1Screen.rotation.y = 0.15;
-    group.add(m1Screen);
+      const mScreen = new THREE.Mesh(screenGeo, screenMat);
+      mScreen.position.set(0, 1.05, -0.3);
+      mScreen.rotation.y = 0;
+      group.add(mScreen);
+    } else {
+      // 2 ou mais Monitores (configuração estéreo angular)
+      // Monitor 1 (Esquerda)
+      const m1Stand = new THREE.Mesh(standGeo, standMat);
+      m1Stand.position.set(-0.35, 0.88, -0.3);
+      group.add(m1Stand);
 
-    // Monitor 2 (Direita)
-    const m2Stand = new THREE.Mesh(standGeo, standMat);
-    m2Stand.position.set(0.35, 0.88, -0.3);
-    group.add(m2Stand);
+      const m1Screen = new THREE.Mesh(screenGeo, screenMat);
+      m1Screen.position.set(-0.35, 1.05, -0.3);
+      m1Screen.rotation.y = 0.15;
+      group.add(m1Screen);
 
-    const m2Screen = new THREE.Mesh(screenGeo, screenMat);
-    m2Screen.position.set(0.35, 1.05, -0.3);
-    m2Screen.rotation.y = -0.15;
-    group.add(m2Screen);
+      // Monitor 2 (Direita)
+      const m2Stand = new THREE.Mesh(standGeo, standMat);
+      m2Stand.position.set(0.35, 0.88, -0.3);
+      group.add(m2Stand);
+
+      const m2Screen = new THREE.Mesh(screenGeo, screenMat);
+      m2Screen.position.set(0.35, 1.05, -0.3);
+      m2Screen.rotation.y = -0.15;
+      group.add(m2Screen);
+    }
+  }
+
+  // 3.1 Docking Station Hub (se habilitado)
+  if (desk.has_docking_station) {
+    const dockGeo = new THREE.BoxGeometry(0.22, 0.03, 0.14);
+    const dockMat = new THREE.MeshStandardMaterial({ color: 0x1f242d, metalness: 0.8, roughness: 0.3 });
+    const dockMesh = new THREE.Mesh(dockGeo, dockMat);
+    dockMesh.position.set(0.65, 0.8, -0.25);
+    group.add(dockMesh);
   }
 
   // 4. Office Chair (Cadeira ergonômica)

@@ -260,13 +260,7 @@ export const api = {
     async get(id: number): Promise<Zone> {
       return request<Zone>(`/zones/${id}`);
     },
-    async create(data: {
-      name: string;
-      floor?: number;
-      building_id?: number | null;
-      description?: string | null;
-      is_active?: boolean;
-    }): Promise<Zone> {
+    async create(data: Partial<Zone> & { name: string }): Promise<Zone> {
       return request<Zone>('/zones', {
         method: 'POST',
         body: JSON.stringify(data),

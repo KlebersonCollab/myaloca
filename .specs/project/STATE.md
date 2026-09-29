@@ -1,11 +1,11 @@
 # Project State & Context
 
 ## 🏁 Session Status
-- **Current Task**: Conclusão da Feature 10 (Cancelamento Administrativo e Liberação Imediata de Baias Reservadas / Ocupadas por Admins/Gestores).
-- **Progress**: 100% das Features 01 a 10 implementadas e auditadas por sensores (31/31 testes pytest, linter ruff zero erros, build de produção frontend aprovado, integridade SDD 100%).
+- **Current Task**: Conclusão da Feature 11 (Planta Dinâmica Configurável por Pavimento, Edição Granular de Equipamentos e Drag & Drop de Baias 2D/3D).
+- **Progress**: 100% das Features 01 a 11 implementadas e auditadas por sensores (33/33 testes pytest, linter ruff zero erros, build de produção frontend aprovado, integridade SDD 100%).
 - **Next Steps**:
-  1. Apresentar ao usuário as duas interfaces de liberação administrativa: na tabela de Baias (`AdminDesksView.vue`) e diretamente pelo clique na Baia Ocupada no mapa 3D (`BookingModal.vue`).
-  2. Acompanhar feedback do usuário e potenciais novas melhorias no ecossistema.
+  1. Apresentar ao usuário as capacidades de redimensionamento da matriz da planta, edição de equipamentos (monitores, dock, standing desk) e o recurso de drag & drop tanto na gestão 2D quanto no mapa 3D.
+  2. Acompanhar feedback do usuário e potenciais novos refinamentos no ecossistema MyAloca.
 
 ## 💡 Decisions Log
 - **2026-09-28 - Backend Stack**: FastAPI Async com SQLAlchemy 2.0 (`aiosqlite` para dev local e `asyncpg` para PostgreSQL em produção via URL de conexão desacoplada).
@@ -24,6 +24,8 @@
 - **2026-09-28 - Perfil do Usuário e Gestão de Cargos/Papéis (ADR 0006)**: Implementado formulário de autoatendimento em Meu Perfil para alteração de nome, cargo corporativo (`job_title`), departamento, foto/avatar DiceBear e senha (via `PUT /api/v1/auth/me`). Criado painel administrativo "Equipe & Cargos" (`AdminUsersView.vue`) com CRUD completo via `/api/v1/users` para promoção/rebaixamento de papéis (`colaborador`, `gestor`, `admin`), alteração de cargos de terceiros, ativação/inativação de contas e proteção ativa contra auto-exclusão (`CANNOT_DELETE_SELF`).
 - **2026-09-28 - CRUD de Departamentos e Early Checkout de Reservas (ADR 0007)**: Implementada entidade `Department` e endpoints `/api/v1/departments` com proteção referencial contra exclusão de departamentos com membros ativos (`DEPARTMENT_HAS_USERS`). Criada aba dedicada de Departamentos em `AdminUsersView.vue` e integração de seleção dinâmica em perfis e usuários. Habilitado encerramento antecipado de reservas confirmadas (`POST /bookings/{id}/checkout` e `/cancel`) que trunca `end_time` para `now`, define status como `FINALIZADA` e libera a baia (`DISPONIVEL`) no 3D e no calendário para novos agendamentos sem colisão.
 - **2026-09-28 - Cancelamento Administrativo e Liberação de Baias (ADR 0008)**: Criado endpoint `POST /api/v1/desks/{desk_id}/release` protegido por RBAC (`admin`, `gestor`) no backend. O serviço encerra a reserva ativa imediatamente (truncando `end_time` para o instante atual e alterando status para `FINALIZADA` ou `CANCELADA_USUARIO`) e redefine `desk.status` para `DISPONIVEL`. Na interface do usuário, gestores dispõem do botão de ação "Liberar" na tabela de Baias (`AdminDesksView.vue`) e de um painel de liberação imediata ao clicar em qualquer baia ocupada no mapa 3D (`BookingModal.vue`), permitindo liberação rápida quando o funcionário avisa que foi embora mais cedo.
+- **2026-09-28 - Dimensões Dinâmicas de Grade e Seed Corporativa (ADR 0009)**: Armazenamento persistente de `grid_cols` e `grid_rows` em `Zone`, permitindo aos gestores configurar livremente a largura (colunas) e profundidade (linhas) de cada pavimento. Atualizada a barra de ferramentas de planta no `AdminDesksView.vue` com salvamento instantâneo de dimensões e renderização responsiva em CSS Grid. Seed do banco de dados (`init_db.py`) reconstruída com empresa, edifício corporativo de múltiplos andares (6x4, 8x4, 6x3) e 4 departamentos vinculados.
+- **2026-09-28 - Edição Granular de Equipamentos e Drag & Drop 2D/3D (ADR 0010)**: Suporte a `monitors_count` (0 a 3), docking station, standing desk e `extra_equipment` no backend e no frontend com renderização fiel em Three.js (0 monitores, 1 monitor central ou 2 monitores estéreo angulados). Implementado Drag & Drop 2D via HTML5 Drag API na planta do `AdminDesksView.vue` e Drag & Drop 3D interativo via Raycasting sobre plano com snap de 0.6m em `OfficeCanvas3D.vue`, além de formulário de edição direta de baia ao clicar no mapa 3D em `BookingModal.vue`.
 
 ## 🚧 Active Blockers
 - N/A.

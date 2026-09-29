@@ -14,10 +14,13 @@ import {
   ShieldAlert,
   LogOut,
   RefreshCw,
+  Edit3,
+  Save,
+  Sliders,
 } from 'lucide-vue-next';
 import { api } from '../services/api';
 import { useAuth } from '../stores/auth';
-import type { DeskWithOccupant } from '../types';
+import type { DeskWithOccupant, SpaceType, UserRole } from '../types';
 
 const props = defineProps<{
   desk: DeskWithOccupant | null;
@@ -156,13 +159,89 @@ async function handleReleaseFromModal() {
   }
 }
 
+const isEditing = ref(false);
+const isSavingDesk = ref(false);
+
+const canManageDesk = computed(() => {
+  const role = currentUser.value?.role;
+  return role === 'admin' || role === 'gestor';
+});
+
+const editForm = ref({
+  code: '',
+  space_type: 'BAIA_TRABALHO' as SpaceType,
+  capacity: 1,
+  monitors_count: 1,
+  has_docking_station: false,
+  is_standing_desk: false,
+  extra_equipment: '',
+  max_duration_minutes: null as number | null,
+  required_role: null as UserRole | null,
+  pos_x: 0,
+  pos_z: 0,
+});
+
+function initEditForm() {
+  if (!props.desk) return;
+  editForm.value = {
+    code: props.desk.code || '',
+    space_type: (props.desk.space_type as SpaceType) || 'BAIA_TRABALHO',
+    capacity: props.desk.capacity || 1,
+    monitors_count: props.desk.monitors_count !== undefined ? props.desk.monitors_count : (props.desk.has_monitor ? 1 : 0),
+    has_docking_station: !!props.desk.has_docking_station,
+    is_standing_desk: !!props.desk.is_standing_desk,
+    extra_equipment: props.desk.extra_equipment || '',
+    max_duration_minutes: props.desk.max_duration_minutes || null,
+    required_role: (props.desk.required_role as UserRole) || null,
+    pos_x: props.desk.pos_x ?? 0,
+    pos_z: props.desk.pos_z ?? 0,
+  };
+}
+
+async function handleSaveDesk() {
+  if (!props.desk) return;
+  isSavingDesk.value = true;
+  errorMessage.value = null;
+  successMessage.value = null;
+
+  try {
+    const updated = await api.desks.update(props.desk.id, {
+      code: editForm.value.code,
+      space_type: editForm.value.space_type,
+      capacity: Number(editForm.value.capacity),
+      monitors_count: Number(editForm.value.monitors_count),
+      has_monitor: Number(editForm.value.monitors_count) > 0,
+      has_docking_station: editForm.value.has_docking_station,
+      is_standing_desk: editForm.value.is_standing_desk,
+      extra_equipment: editForm.value.extra_equipment || undefined,
+      max_duration_minutes: editForm.value.max_duration_minutes ? Number(editForm.value.max_duration_minutes) : null,
+      required_role: editForm.value.required_role || null,
+      pos_x: Number(editForm.value.pos_x),
+      pos_z: Number(editForm.value.pos_z),
+    });
+
+    Object.assign(props.desk, updated);
+    successMessage.value = 'Equipamentos e propriedades da baia atualizados com sucesso!';
+    setTimeout(() => {
+      isEditing.value = false;
+      emit('booking-created');
+    }, 900);
+  } catch (err: any) {
+    errorMessage.value = err.message || 'Erro ao atualizar dados da baia.';
+  } finally {
+    isSavingDesk.value = false;
+  }
+}
+
 watch(
   () => props.isOpen,
   (val) => {
     if (val && props.desk) {
+      isEditing.value = false;
       errorMessage.value = null;
       successMessage.value = null;
       notes.value = '';
+      initEditForm();
 
       // Default duration intelligently according to room policy
       if (props.desk.max_duration_minutes && props.desk.max_duration_minutes < 540) {
@@ -237,16 +316,202 @@ watch(
             </span>
           </div>
         </div>
-        <button
-          class="p-1 rounded-md text-ink-subtle hover:text-ink hover:bg-surface-3 transition"
-          @click="emit('close')"
-        >
-          <X class="w-5 h-5" />
-        </button>
+
+        <div class="flex items-center space-x-2">
+          <!-- Gestor/Admin Edit Toggle Button -->
+          <button
+            v-if="canManageDesk"
+            type="button"
+            class="px-2.5 py-1.5 text-xs font-semibold rounded-lg border transition flex items-center space-x-1.5"
+            :class="isEditing ? 'bg-primary text-white border-primary shadow-sm' : 'bg-surface-2 hover:bg-surface-3 text-ink-muted border-hairline'"
+            @click="isEditing = !isEditing; if (isEditing) initEditForm()"
+          >
+            <Edit3 class="w-3.5 h-3.5" />
+            <span>{{ isEditing ? 'Ver Reserva' : 'Editar Baia' }}</span>
+          </button>
+
+          <button
+            class="p-1 rounded-md text-ink-subtle hover:text-ink hover:bg-surface-3 transition"
+            @click="emit('close')"
+          >
+            <X class="w-5 h-5" />
+          </button>
+        </div>
       </div>
 
       <!-- Content -->
       <div class="p-5 space-y-4">
+        <!-- Manager Direct Desk & Equipment Editing Form -->
+        <form v-if="isEditing" class="space-y-4" @submit.prevent="handleSaveDesk">
+          <div class="p-3 bg-primary/10 border border-primary/20 rounded-lg text-xs text-primary flex items-center space-x-2">
+            <Sliders class="w-4 h-4 shrink-0" />
+            <span>Você está editando os equipamentos e propriedades desta baia diretamente no mapa 3D.</span>
+          </div>
+
+          <!-- Code & Type -->
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-medium text-ink-muted mb-1">Código da Baia</label>
+              <input
+                v-model="editForm.code"
+                type="text"
+                required
+                class="w-full bg-surface-2 border border-hairline rounded-md px-3 py-2 text-sm text-ink focus:outline-none focus:border-primary"
+              />
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-ink-muted mb-1">Tipo de Espaço</label>
+              <select
+                v-model="editForm.space_type"
+                class="w-full bg-surface-2 border border-hairline rounded-md px-3 py-2 text-sm text-ink focus:outline-none focus:border-primary"
+              >
+                <option value="BAIA_TRABALHO">Baia de Trabalho</option>
+                <option value="SALA_REUNIAO">Sala de Reunião</option>
+                <option value="CABINE_FOCUS">Cabine Focus</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Capacity & Role Requirement -->
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-medium text-ink-muted mb-1">Capacidade (Pessoas)</label>
+              <input
+                v-model.number="editForm.capacity"
+                type="number"
+                min="1"
+                max="50"
+                class="w-full bg-surface-2 border border-hairline rounded-md px-3 py-2 text-sm text-ink focus:outline-none focus:border-primary"
+              />
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-ink-muted mb-1">Restrição de Acesso</label>
+              <select
+                v-model="editForm.required_role"
+                class="w-full bg-surface-2 border border-hairline rounded-md px-3 py-2 text-sm text-ink focus:outline-none focus:border-primary"
+              >
+                <option :value="null">Uso Livre (Todos)</option>
+                <option value="gestor">Exclusivo Gestores / Admins</option>
+                <option value="admin">Apenas Administradores</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Equipment Section -->
+          <div class="p-3 bg-surface-2/70 border border-hairline rounded-lg space-y-3">
+            <label class="block text-xs font-semibold text-ink flex items-center space-x-1.5">
+              <Monitor class="w-3.5 h-3.5 text-primary" />
+              <span>Configuração de Monitores</span>
+            </label>
+            <div class="grid grid-cols-4 gap-2">
+              <button
+                v-for="count in [0, 1, 2, 3]"
+                :key="count"
+                type="button"
+                class="py-1.5 px-2 rounded-md text-xs font-medium border text-center transition"
+                :class="editForm.monitors_count === count ? 'bg-primary text-white border-primary shadow-sm' : 'bg-surface-1 text-ink-muted border-hairline hover:bg-surface-3'"
+                @click="editForm.monitors_count = count"
+              >
+                {{ count === 0 ? 'Sem Monitor' : (count === 1 ? '1 Monitor' : `${count} Monitores`) }}
+              </button>
+            </div>
+
+            <!-- Toggles: Docking & Standing -->
+            <div class="grid grid-cols-2 gap-2 pt-1">
+              <label class="flex items-center space-x-2 p-2 rounded-md bg-surface-1 border border-hairline cursor-pointer hover:border-hairline-strong transition text-xs">
+                <input
+                  v-model="editForm.has_docking_station"
+                  type="checkbox"
+                  class="rounded bg-surface-2 border-hairline text-primary focus:ring-0"
+                />
+                <span class="text-ink">Docking Station</span>
+              </label>
+
+              <label class="flex items-center space-x-2 p-2 rounded-md bg-surface-1 border border-hairline cursor-pointer hover:border-hairline-strong transition text-xs">
+                <input
+                  v-model="editForm.is_standing_desk"
+                  type="checkbox"
+                  class="rounded bg-surface-2 border-hairline text-primary focus:ring-0"
+                />
+                <span class="text-ink">Standing Desk</span>
+              </label>
+            </div>
+
+            <!-- Extra Equipment -->
+            <div>
+              <label class="block text-[11px] font-medium text-ink-subtle mb-1">Equipamentos Adicionais</label>
+              <input
+                v-model="editForm.extra_equipment"
+                type="text"
+                placeholder="Ex: Webcam 4K, Microfone Condensador, Ring Light"
+                class="w-full bg-surface-1 border border-hairline rounded-md px-3 py-1.5 text-xs text-ink placeholder:text-ink-tertiary focus:outline-none focus:border-primary"
+              />
+            </div>
+          </div>
+
+          <!-- Position Coordinates & Duration Policy -->
+          <div class="grid grid-cols-3 gap-2">
+            <div>
+              <label class="block text-[11px] font-medium text-ink-subtle mb-1">Posição X (m)</label>
+              <input
+                v-model.number="editForm.pos_x"
+                type="number"
+                step="0.1"
+                class="w-full bg-surface-2 border border-hairline rounded-md px-2.5 py-1.5 text-xs text-ink focus:outline-none focus:border-primary"
+              />
+            </div>
+            <div>
+              <label class="block text-[11px] font-medium text-ink-subtle mb-1">Posição Z (m)</label>
+              <input
+                v-model.number="editForm.pos_z"
+                type="number"
+                step="0.1"
+                class="w-full bg-surface-2 border border-hairline rounded-md px-2.5 py-1.5 text-xs text-ink focus:outline-none focus:border-primary"
+              />
+            </div>
+            <div>
+              <label class="block text-[11px] font-medium text-ink-subtle mb-1">Máx Minutos</label>
+              <input
+                v-model.number="editForm.max_duration_minutes"
+                type="number"
+                placeholder="Ilimitado"
+                class="w-full bg-surface-2 border border-hairline rounded-md px-2.5 py-1.5 text-xs text-ink focus:outline-none focus:border-primary"
+              />
+            </div>
+          </div>
+
+          <!-- Error / Success messages in Edit Mode -->
+          <div v-if="errorMessage" class="p-2.5 bg-red-500/10 border border-red-500/20 rounded-md text-xs text-red-400">
+            {{ errorMessage }}
+          </div>
+          <div v-if="successMessage" class="p-2.5 bg-emerald-500/10 border border-emerald-500/20 rounded-md text-xs text-emerald-400 flex items-center space-x-2">
+            <CheckCircle2 class="w-4 h-4" />
+            <span>{{ successMessage }}</span>
+          </div>
+
+          <!-- Actions -->
+          <div class="flex items-center justify-end space-x-2 pt-2 border-t border-hairline">
+            <button
+              type="button"
+              class="px-3 py-2 rounded-md bg-surface-2 hover:bg-surface-3 text-ink-muted text-xs font-medium transition"
+              @click="isEditing = false"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              :disabled="isSavingDesk"
+              class="px-4 py-2 rounded-md bg-primary hover:bg-primary-hover text-white text-xs font-semibold transition flex items-center space-x-1.5 disabled:opacity-50"
+            >
+              <RefreshCw v-if="isSavingDesk" class="w-3.5 h-3.5 animate-spin" />
+              <Save v-else class="w-3.5 h-3.5" />
+              <span>{{ isSavingDesk ? 'Salvando...' : 'Salvar Alterações' }}</span>
+            </button>
+          </div>
+        </form>
+
+        <!-- Standard Booking View when not editing -->
+        <template v-else>
         <!-- Policies / Limits Banner -->
         <div
           v-if="desk.max_duration_minutes || desk.required_role"
@@ -452,6 +717,7 @@ watch(
             Este espaço está atualmente {{ desk.status === 'OCUPADA' ? 'ocupado' : 'reservado' }} e indisponível para novos agendamentos.
           </div>
         </div>
+        </template>
       </div>
     </div>
   </div>

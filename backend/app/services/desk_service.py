@@ -43,6 +43,8 @@ class DeskService:
             floor=zone_in.floor,
             building_id=zone_in.building_id,
             description=zone_in.description,
+            grid_cols=zone_in.grid_cols,
+            grid_rows=zone_in.grid_rows,
             is_active=zone_in.is_active,
         )
         db.add(zone)
@@ -109,6 +111,12 @@ class DeskService:
     @staticmethod
     async def create_desk(db: AsyncSession, desk_in: DeskCreate) -> Desk:
         qr_hash = DeskService.generate_immutable_qr_hash()
+        monitors_count = (
+            desk_in.monitors_count
+            if desk_in.monitors_count is not None
+            else (1 if desk_in.has_monitor else 0)
+        )
+        has_monitor = monitors_count > 0
         desk = Desk(
             code=desk_in.code,
             zone_id=desk_in.zone_id,
@@ -116,9 +124,11 @@ class DeskService:
             pos_y=desk_in.pos_y,
             pos_z=desk_in.pos_z,
             rotation_y=desk_in.rotation_y,
-            has_monitor=desk_in.has_monitor,
+            has_monitor=has_monitor,
+            monitors_count=monitors_count,
             has_docking_station=desk_in.has_docking_station,
             is_standing_desk=desk_in.is_standing_desk,
+            extra_equipment=desk_in.extra_equipment,
             space_type=desk_in.space_type,
             capacity=desk_in.capacity,
             required_role=desk_in.required_role,
@@ -136,6 +146,12 @@ class DeskService:
         created_desks: list[Desk] = []
         for desk_in in desks_in:
             qr_hash = DeskService.generate_immutable_qr_hash()
+            monitors_count = (
+                desk_in.monitors_count
+                if desk_in.monitors_count is not None
+                else (1 if desk_in.has_monitor else 0)
+            )
+            has_monitor = monitors_count > 0
             desk = Desk(
                 code=desk_in.code,
                 zone_id=desk_in.zone_id,
@@ -143,9 +159,11 @@ class DeskService:
                 pos_y=desk_in.pos_y,
                 pos_z=desk_in.pos_z,
                 rotation_y=desk_in.rotation_y,
-                has_monitor=desk_in.has_monitor,
+                has_monitor=has_monitor,
+                monitors_count=monitors_count,
                 has_docking_station=desk_in.has_docking_station,
                 is_standing_desk=desk_in.is_standing_desk,
+                extra_equipment=desk_in.extra_equipment,
                 space_type=desk_in.space_type,
                 capacity=desk_in.capacity,
                 required_role=desk_in.required_role,
@@ -187,6 +205,14 @@ class DeskService:
 
         for field, val in update_data.items():
             setattr(desk, field, val)
+
+        if "monitors_count" in update_data and "has_monitor" not in update_data:
+            desk.has_monitor = desk.monitors_count > 0
+        elif "has_monitor" in update_data and "monitors_count" not in update_data:
+            if not desk.has_monitor:
+                desk.monitors_count = 0
+            elif desk.monitors_count == 0:
+                desk.monitors_count = 1
 
         db.add(desk)
         await db.commit()

@@ -2,8 +2,9 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { RefreshCw, RotateCcw, ZoomIn, ZoomOut, Layers, Building2 } from 'lucide-vue-next';
+import { RefreshCw, RotateCcw, ZoomIn, ZoomOut, Layers, Building2, Move, CheckCircle2 } from 'lucide-vue-next';
 import { api } from '../services/api';
+import { useAuth } from '../stores/auth';
 import type { Building, DeskWithOccupant, Zone } from '../types';
 import { createDeskGroup, createOfficeFloor } from '../utils/office3d';
 
@@ -46,6 +47,13 @@ const filteredZones = computed(() => {
   });
 });
 
+const { currentUser } = useAuth();
+const canManage = computed(() => currentUser.value?.role === 'admin' || currentUser.value?.role === 'gestor');
+
+const isMoveMode = ref(false);
+const isDragging = ref(false);
+const dragToast = ref<string | null>(null);
+
 let scene: THREE.Scene;
 let camera: THREE.PerspectiveCamera;
 let renderer: THREE.WebGLRenderer;
@@ -54,6 +62,21 @@ let animationFrameId: number;
 let deskObjectsGroup: THREE.Group;
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
+
+let draggedDeskGroup: THREE.Object3D | null = null;
+let draggedDeskData: DeskWithOccupant | null = null;
+let dragStartPos = { x: 0, z: 0 };
+let hasMoved = false;
+let didJustDrag = false;
+let toastTimeout: any = null;
+
+function showDragToast(msg: string) {
+  dragToast.value = msg;
+  if (toastTimeout) clearTimeout(toastTimeout);
+  toastTimeout = setTimeout(() => {
+    dragToast.value = null;
+  }, 3500);
+}
 
 async function loadData() {
   isLoading.value = true;
@@ -139,6 +162,8 @@ function initScene() {
 
   // 8. Event Listeners
   window.addEventListener('resize', onWindowResize);
+  window.addEventListener('mouseup', onCanvasMouseUp);
+  renderer.domElement.addEventListener('mousedown', onCanvasMouseDown);
   renderer.domElement.addEventListener('click', onCanvasClick);
   renderer.domElement.addEventListener('mousemove', onCanvasMouseMove);
   renderer.domElement.addEventListener('mouseleave', onCanvasMouseLeave);
@@ -149,11 +174,62 @@ function initScene() {
 const hoveredDesk = ref<DeskWithOccupant | null>(null);
 const tooltipPos = ref<{ x: number; y: number }>({ x: 0, y: 0 });
 
+function onCanvasMouseDown(event: MouseEvent) {
+  if (event.button !== 0) return;
+  if (!isMoveMode.value || !containerRef.value || !renderer || !camera || !deskObjectsGroup) return;
+
+  const rect = renderer.domElement.getBoundingClientRect();
+  mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+  raycaster.setFromCamera(mouse, camera);
+  const intersects = raycaster.intersectObjects(deskObjectsGroup.children, true);
+
+  if (intersects.length > 0) {
+    let topParent = intersects[0].object;
+    while (topParent.parent && topParent.parent !== deskObjectsGroup) {
+      topParent = topParent.parent;
+    }
+    const deskData = topParent.userData?.desk as DeskWithOccupant | undefined;
+    if (deskData) {
+      draggedDeskGroup = topParent;
+      draggedDeskData = deskData;
+      dragStartPos = { x: topParent.position.x, z: topParent.position.z };
+      hasMoved = false;
+      isDragging.value = true;
+      controls.enabled = false;
+      renderer.domElement.style.cursor = 'grabbing';
+    }
+  }
+}
+
 function onCanvasMouseMove(event: MouseEvent) {
   if (!containerRef.value || !renderer || !camera || !deskObjectsGroup) return;
   const rect = renderer.domElement.getBoundingClientRect();
   mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
   mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+  // Active dragging in move mode
+  if (isDragging.value && draggedDeskGroup) {
+    raycaster.setFromCamera(mouse, camera);
+    const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+    const intersectionPoint = new THREE.Vector3();
+    if (raycaster.ray.intersectPlane(groundPlane, intersectionPoint)) {
+      const snap = 0.6;
+      const snappedX = Math.round(intersectionPoint.x / snap) * snap;
+      const snappedZ = Math.round(intersectionPoint.z / snap) * snap;
+
+      draggedDeskGroup.position.x = snappedX;
+      draggedDeskGroup.position.z = snappedZ;
+
+      if (Math.abs(snappedX - dragStartPos.x) > 0.05 || Math.abs(snappedZ - dragStartPos.z) > 0.05) {
+        hasMoved = true;
+      }
+    }
+    renderer.domElement.style.cursor = 'grabbing';
+    hoveredDesk.value = null;
+    return;
+  }
 
   raycaster.setFromCamera(mouse, camera);
   const intersects = raycaster.intersectObjects(deskObjectsGroup.children, true);
@@ -170,13 +246,63 @@ function onCanvasMouseMove(event: MouseEvent) {
         x: Math.min(event.clientX - rect.left + 15, rect.width - 280),
         y: Math.min(event.clientY - rect.top + 15, rect.height - 180),
       };
-      renderer.domElement.style.cursor = 'pointer';
+      renderer.domElement.style.cursor = isMoveMode.value ? 'grab' : 'pointer';
       return;
     }
   }
 
   hoveredDesk.value = null;
-  renderer.domElement.style.cursor = 'default';
+  renderer.domElement.style.cursor = isMoveMode.value ? 'crosshair' : 'default';
+}
+
+async function onCanvasMouseUp() {
+  if (!isDragging.value) return;
+
+  isDragging.value = false;
+  if (controls) {
+    controls.enabled = true;
+  }
+  if (renderer?.domElement) {
+    renderer.domElement.style.cursor = isMoveMode.value ? 'grab' : 'default';
+  }
+
+  if (hasMoved && draggedDeskGroup && draggedDeskData) {
+    didJustDrag = true;
+    setTimeout(() => {
+      didJustDrag = false;
+    }, 150);
+
+    const newX = Number(draggedDeskGroup.position.x.toFixed(2));
+    const newZ = Number(draggedDeskGroup.position.z.toFixed(2));
+    const targetDesk = draggedDeskData;
+
+    try {
+      await api.desks.update(targetDesk.id, {
+        pos_x: newX,
+        pos_z: newZ,
+      });
+
+      targetDesk.pos_x = newX;
+      targetDesk.pos_z = newZ;
+
+      const localItem = desks.value.find((d) => d.id === targetDesk.id);
+      if (localItem) {
+        localItem.pos_x = newX;
+        localItem.pos_z = newZ;
+      }
+
+      showDragToast(`Baia ${targetDesk.code} reposicionada para (${newX}m, ${newZ}m)`);
+    } catch (err: any) {
+      if (draggedDeskGroup) {
+        draggedDeskGroup.position.x = dragStartPos.x;
+        draggedDeskGroup.position.z = dragStartPos.z;
+      }
+      showDragToast(`Erro ao salvar nova posição: ${err.message || 'Falha de comunicação'}`);
+    }
+  }
+
+  draggedDeskGroup = null;
+  draggedDeskData = null;
 }
 
 function onCanvasMouseLeave() {
@@ -215,6 +341,7 @@ function onWindowResize() {
 }
 
 function onCanvasClick(event: MouseEvent) {
+  if (didJustDrag || isDragging.value) return;
   if (!containerRef.value) return;
   const rect = renderer.domElement.getBoundingClientRect();
   mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
@@ -247,6 +374,22 @@ function zoomCamera(direction: 'in' | 'out') {
   controls.update();
 }
 
+watch(isMoveMode, (active) => {
+  if (!active && isDragging.value) {
+    isDragging.value = false;
+    if (controls) controls.enabled = true;
+    if (draggedDeskGroup) {
+      draggedDeskGroup.position.x = dragStartPos.x;
+      draggedDeskGroup.position.z = dragStartPos.z;
+    }
+    draggedDeskGroup = null;
+    draggedDeskData = null;
+  }
+  if (renderer?.domElement) {
+    renderer.domElement.style.cursor = active ? 'grab' : 'default';
+  }
+});
+
 watch(selectedBuildingId, () => {
   selectedZoneId.value = null;
   loadData();
@@ -269,7 +412,9 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   cancelAnimationFrame(animationFrameId);
   window.removeEventListener('resize', onWindowResize);
+  window.removeEventListener('mouseup', onCanvasMouseUp);
   if (renderer && renderer.domElement) {
+    renderer.domElement.removeEventListener('mousedown', onCanvasMouseDown);
     renderer.domElement.removeEventListener('click', onCanvasClick);
     renderer.domElement.removeEventListener('mousemove', onCanvasMouseMove);
     renderer.domElement.removeEventListener('mouseleave', onCanvasMouseLeave);
@@ -435,6 +580,19 @@ onBeforeUnmount(() => {
             </option>
           </select>
         </div>
+
+        <!-- Manager Drag & Drop Mode Toggle -->
+        <div v-if="canManage" class="pt-1.5 border-t border-hairline/60">
+          <button
+            type="button"
+            class="w-full flex items-center justify-center space-x-2 py-1.5 px-3 rounded-lg text-xs font-semibold transition"
+            :class="isMoveMode ? 'bg-primary text-white shadow-md shadow-primary/30 ring-1 ring-white/20' : 'bg-surface-2 hover:bg-surface-3 text-ink-muted border border-hairline'"
+            @click="isMoveMode = !isMoveMode"
+          >
+            <Move class="w-3.5 h-3.5" />
+            <span>{{ isMoveMode ? 'Finalizar Mover Baias' : 'Mover Baias (Drag & Drop 3D)' }}</span>
+          </button>
+        </div>
       </div>
 
       <!-- Quick Metrics Pill -->
@@ -494,6 +652,25 @@ onBeforeUnmount(() => {
       <span class="text-[11px] text-ink-subtle bg-surface-1/80 border border-hairline px-2.5 py-1 rounded-full backdrop-blur">
         💡 Arraste para girar • Scroll para zoom • Clique numa baia para reservar
       </span>
+    </div>
+
+    <!-- Reposition Mode Guide Banner -->
+    <div v-if="isMoveMode" class="absolute top-4 left-1/2 -translate-x-1/2 z-20 pointer-events-auto">
+      <div class="bg-primary/90 backdrop-blur-md text-white px-4 py-2 rounded-xl shadow-2xl border border-white/20 flex items-center space-x-2 text-xs font-semibold animate-pulse">
+        <Move class="w-4 h-4 shrink-0" />
+        <span>Modo Reposicionar Ativo: Clique e arraste qualquer baia no piso 3D. A nova posição é salva automaticamente.</span>
+      </div>
+    </div>
+
+    <!-- Drag Toast Notification -->
+    <div
+      v-if="dragToast"
+      class="absolute bottom-16 left-1/2 -translate-x-1/2 z-30 pointer-events-none transition-all duration-200"
+    >
+      <div class="bg-surface-1/95 border border-emerald-500/40 text-emerald-400 px-4 py-2 rounded-lg shadow-2xl backdrop-blur-md text-xs font-medium flex items-center space-x-2">
+        <CheckCircle2 class="w-4 h-4 shrink-0" />
+        <span>{{ dragToast }}</span>
+      </div>
     </div>
   </div>
 </template>

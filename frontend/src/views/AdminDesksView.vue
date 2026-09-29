@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import {
   Shield,
   Plus,
@@ -97,6 +97,8 @@ const newZoneForm = ref({
   floor: 2,
   name: '',
   description: '',
+  grid_cols: 6,
+  grid_rows: 4,
 });
 const isCreatingZone = ref(false);
 const zoneError = ref<string | null>(null);
@@ -134,13 +136,17 @@ const editDeskForm = ref({
   capacity: 1,
   required_role: '' as '' | UserRole,
   max_duration_minutes: null as number | null,
-  has_monitor: false,
+  has_monitor: true,
+  monitors_count: 1,
   has_docking_station: false,
   is_standing_desk: false,
+  extra_equipment: '',
 });
 
-// Grid click-to-place state
+// Grid click-to-place and Drag & Drop state
 const isClickPlacing = ref(false);
+const draggedDesk = ref<Desk | null>(null);
+const isDraggingDesk = ref(false);
 
 // ==========================================
 // Computed Properties
@@ -215,17 +221,106 @@ const previewDesks = computed(() => {
   return list;
 });
 
-// Interactive 2D Grid
-const gridRows = 4;
-const gridCols = 6;
+// Interactive 2D Grid (Dynamic Floor Dimensions & Drag-and-Drop)
+const currentActiveZone = computed(() => {
+  if (selectedFloor.value !== null) {
+    return filteredZones.value.find((z) => z.floor === selectedFloor.value) || filteredZones.value[0] || zones.value[0];
+  }
+  return filteredZones.value[0] || zones.value[0];
+});
+
+const gridColsInput = ref(6);
+const gridRowsInput = ref(4);
+const isUpdatingGrid = ref(false);
+
+watch(
+  currentActiveZone,
+  (zone: Zone | undefined) => {
+    if (zone) {
+      gridColsInput.value = zone.grid_cols || 6;
+      gridRowsInput.value = zone.grid_rows || 4;
+    }
+  },
+  { immediate: true }
+);
+
+const activeGridCols = computed(() => currentActiveZone.value?.grid_cols || gridColsInput.value || 6);
+const activeGridRows = computed(() => currentActiveZone.value?.grid_rows || gridRowsInput.value || 4);
+
+async function handleSaveGridDimensions() {
+  if (!currentActiveZone.value) return;
+  isUpdatingGrid.value = true;
+  try {
+    const cols = Math.max(2, Math.min(30, Number(gridColsInput.value)));
+    const rows = Math.max(2, Math.min(30, Number(gridRowsInput.value)));
+    await api.zones.update(currentActiveZone.value.id, {
+      grid_cols: cols,
+      grid_rows: rows,
+    });
+    await loadData();
+  } catch (err: any) {
+    alert('Erro ao atualizar dimensões da grade: ' + (err.message || err));
+  } finally {
+    isUpdatingGrid.value = false;
+  }
+}
 
 function getDeskAtGridCell(row: number, col: number): Desk | undefined {
-  const targetX = Number(((col - (gridCols - 1) / 2) * 2.4).toFixed(2));
-  const targetZ = Number(((row - (gridRows - 1) / 2) * 2.4).toFixed(2));
+  const targetX = Number(((col - (activeGridCols.value - 1) / 2) * 2.4).toFixed(2));
+  const targetZ = Number(((row - (activeGridRows.value - 1) / 2) * 2.4).toFixed(2));
 
   return filteredDesks.value.find((d) => {
     return Math.abs(d.pos_x - targetX) < 1.0 && Math.abs(d.pos_z - targetZ) < 1.0;
   });
+}
+
+function handleDragStart(event: DragEvent, desk: Desk) {
+  draggedDesk.value = desk;
+  isDraggingDesk.value = true;
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', String(desk.id));
+  }
+}
+
+function handleDragEnd() {
+  isDraggingDesk.value = false;
+  draggedDesk.value = null;
+}
+
+async function handleDropOnGrid(rIndex: number, cIndex: number) {
+  if (!draggedDesk.value) return;
+  const desk = draggedDesk.value;
+  const existingDesk = getDeskAtGridCell(rIndex, cIndex);
+  if (existingDesk && existingDesk.id !== desk.id) {
+    // Cell is already occupied
+    return;
+  }
+
+  const newPosX = Number(((cIndex - (activeGridCols.value - 1) / 2) * 2.4).toFixed(2));
+  const newPosZ = Number(((rIndex - (activeGridRows.value - 1) / 2) * 2.4).toFixed(2));
+
+  // If dropped at same position, just exit
+  if (Math.abs(desk.pos_x - newPosX) < 0.1 && Math.abs(desk.pos_z - newPosZ) < 0.1) {
+    handleDragEnd();
+    return;
+  }
+
+  // Optimistic update
+  desk.pos_x = newPosX;
+  desk.pos_z = newPosZ;
+  handleDragEnd();
+
+  try {
+    await api.desks.update(desk.id, {
+      pos_x: newPosX,
+      pos_z: newPosZ,
+    });
+    await loadData();
+  } catch (err: any) {
+    alert('Erro ao mover baia: ' + (err.message || err));
+    await loadData();
+  }
 }
 
 // ==========================================
@@ -400,6 +495,8 @@ function openCreateZoneModal() {
     floor: (availableFloors.value[availableFloors.value.length - 1] || 1) + 1,
     name: '',
     description: '',
+    grid_cols: 6,
+    grid_rows: 4,
   };
   showNewZoneModal.value = true;
 }
@@ -412,6 +509,8 @@ function openEditZoneModal(z: Zone) {
     floor: z.floor,
     name: z.name,
     description: z.description || '',
+    grid_cols: z.grid_cols || 6,
+    grid_rows: z.grid_rows || 4,
   };
   showNewZoneModal.value = true;
 }
@@ -427,6 +526,8 @@ async function handleSaveZone() {
         floor: newZoneForm.value.floor,
         name: newZoneForm.value.name,
         description: newZoneForm.value.description,
+        grid_cols: newZoneForm.value.grid_cols,
+        grid_rows: newZoneForm.value.grid_rows,
       });
     } else {
       await api.zones.create({
@@ -434,6 +535,8 @@ async function handleSaveZone() {
         name: newZoneForm.value.name,
         floor: newZoneForm.value.floor,
         description: newZoneForm.value.description,
+        grid_cols: newZoneForm.value.grid_cols,
+        grid_rows: newZoneForm.value.grid_rows,
       });
     }
     showNewZoneModal.value = false;
@@ -489,8 +592,10 @@ function openEditDeskModal(d: Desk) {
     required_role: d.required_role || '',
     max_duration_minutes: d.max_duration_minutes ?? null,
     has_monitor: d.has_monitor,
+    monitors_count: d.monitors_count !== undefined ? d.monitors_count : (d.has_monitor ? 1 : 0),
     has_docking_station: d.has_docking_station,
     is_standing_desk: d.is_standing_desk,
+    extra_equipment: d.extra_equipment || '',
   };
 }
 
@@ -500,6 +605,7 @@ async function handleUpdateDesk() {
   editDeskError.value = null;
 
   try {
+    const mCount = Number(editDeskForm.value.monitors_count);
     await api.desks.update(editingDesk.value.id, {
       code: editDeskForm.value.code,
       zone_id: editDeskForm.value.zone_id,
@@ -507,9 +613,11 @@ async function handleUpdateDesk() {
       capacity: editDeskForm.value.capacity,
       required_role: editDeskForm.value.required_role || null,
       max_duration_minutes: editDeskForm.value.max_duration_minutes,
-      has_monitor: editDeskForm.value.has_monitor,
+      monitors_count: mCount,
+      has_monitor: mCount > 0,
       has_docking_station: editDeskForm.value.has_docking_station,
       is_standing_desk: editDeskForm.value.is_standing_desk,
+      extra_equipment: editDeskForm.value.extra_equipment || null,
     });
     editingDesk.value = null;
     await loadData();
@@ -641,9 +749,11 @@ async function handleCreateRoom() {
       return z?.floor === floor;
     });
 
+    const cols = targetZone?.grid_cols || 6;
+    const rows = targetZone?.grid_rows || 4;
     const index = sameFloorDesks.length;
-    const posX = Number((((index % 6) - 2.5) * 2.4).toFixed(2));
-    const posZ = Number(((Math.floor(index / 6) - 1.5) * 2.4).toFixed(2));
+    const posX = Number((((index % cols) - (cols - 1) / 2) * 2.4).toFixed(2));
+    const posZ = Number(((Math.floor(index / cols) - (rows - 1) / 2) * 2.4).toFixed(2));
 
     await api.desks.create({
       code: roomForm.value.code.toUpperCase().trim(),
@@ -676,9 +786,11 @@ async function handlePlaceDeskOnGrid(rIndex: number, cIndex: number) {
     return;
   }
 
-  const targetZone = filteredZones.value[0];
-  const posX = Number(((cIndex - (gridCols - 1) / 2) * 2.4).toFixed(2));
-  const posZ = Number(((rIndex - (gridRows - 1) / 2) * 2.4).toFixed(2));
+  const targetZone = currentActiveZone.value || filteredZones.value[0];
+  const cols = activeGridCols.value;
+  const rows = activeGridRows.value;
+  const posX = Number(((cIndex - (cols - 1) / 2) * 2.4).toFixed(2));
+  const posZ = Number(((rIndex - (rows - 1) / 2) * 2.4).toFixed(2));
   const code = `D-${targetZone.floor}F-R${rIndex + 1}C${cIndex + 1}`;
 
   isClickPlacing.value = true;
@@ -691,6 +803,7 @@ async function handlePlaceDeskOnGrid(rIndex: number, cIndex: number) {
       pos_z: posZ,
       rotation_y: 0.0,
       has_monitor: true,
+      monitors_count: 1,
       has_docking_station: true,
       is_standing_desk: false,
     });
@@ -965,6 +1078,7 @@ onMounted(() => {
               <th class="px-4 py-3">Andar</th>
               <th class="px-4 py-3">Nome do Pavimento / Setor</th>
               <th class="px-4 py-3">Descrição</th>
+              <th class="px-4 py-3 text-center">Grade (Col × Lin)</th>
               <th class="px-4 py-3 text-center">Baias Alocadas</th>
               <th class="px-4 py-3 text-right">Ações</th>
             </tr>
@@ -984,6 +1098,11 @@ onMounted(() => {
               </td>
               <td class="px-4 py-3.5 text-ink-subtle">
                 {{ z.description || '—' }}
+              </td>
+              <td class="px-4 py-3.5 text-center font-mono">
+                <span class="px-2 py-0.5 rounded bg-surface-2 border border-hairline text-ink-muted text-[10px]">
+                  {{ z.grid_cols || 6 }} × {{ z.grid_rows || 4 }}
+                </span>
               </td>
               <td class="px-4 py-3.5 text-center font-bold">
                 <span class="px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">
@@ -1066,32 +1185,74 @@ onMounted(() => {
         </div>
       </div>
 
-      <!-- Interactive Floorplan Grid Preview (Click-to-Place) -->
+      <!-- Interactive Floorplan Grid Preview (Click-to-Place & Drag-and-Drop) -->
       <div class="bg-surface-1 border border-hairline rounded-xl p-5 shadow-xl space-y-3">
-        <div class="flex items-center justify-between">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div class="flex items-center space-x-2">
             <MousePointerClick class="w-4 h-4 text-emerald-400" />
-            <h3 class="font-bold text-sm text-ink">Planta Interativa do Andar (Clique no espaço vazio para criar baia)</h3>
+            <h3 class="font-bold text-sm text-ink">Planta Interativa do Andar (Clique p/ criar, Arraste p/ mover)</h3>
           </div>
-          <span class="text-[11px] text-ink-subtle">
-            💡 Clique em qualquer célula vazia para posicionar uma estação automaticamente.
-          </span>
+          
+          <div class="flex items-center space-x-3 text-xs">
+            <div class="flex items-center space-x-1.5 bg-surface-2 px-2.5 py-1 rounded-lg border border-hairline">
+              <span class="text-ink-subtle">Grade:</span>
+              <input
+                v-model.number="gridColsInput"
+                type="number"
+                min="2"
+                max="30"
+                class="w-12 bg-surface-1 border border-hairline rounded px-1.5 py-0.5 text-center text-xs font-mono text-ink"
+                title="Número de Colunas (X)"
+              />
+              <span class="text-ink-subtle">×</span>
+              <input
+                v-model.number="gridRowsInput"
+                type="number"
+                min="2"
+                max="30"
+                class="w-12 bg-surface-1 border border-hairline rounded px-1.5 py-0.5 text-center text-xs font-mono text-ink"
+                title="Número de Linhas (Z)"
+              />
+              <button
+                type="button"
+                :disabled="isUpdatingGrid"
+                class="ml-1 px-2 py-0.5 rounded bg-primary hover:bg-primary-hover text-white text-[11px] font-medium transition disabled:opacity-50"
+                @click="handleSaveGridDimensions"
+              >
+                {{ isUpdatingGrid ? '...' : 'Salvar Grade' }}
+              </button>
+            </div>
+            
+            <span class="text-[11px] text-ink-subtle hidden lg:inline">
+              💡 Arraste qualquer baia para outra célula para reposicionar.
+            </span>
+          </div>
         </div>
 
         <!-- Grid Matrix -->
         <div class="bg-surface-2/60 border border-hairline rounded-xl p-4 overflow-x-auto">
-          <div class="grid grid-cols-6 gap-2.5 min-w-[600px]">
-            <template v-for="r in gridRows" :key="`row-${r}`">
-              <template v-for="c in gridCols" :key="`cell-${r}-${c}`">
+          <div
+            :style="{
+              display: 'grid',
+              gridTemplateColumns: `repeat(${activeGridCols}, minmax(115px, 1fr))`,
+              gap: '0.625rem',
+              minWidth: `${activeGridCols * 125}px`,
+            }"
+          >
+            <template v-for="r in activeGridRows" :key="`row-${r}`">
+              <template v-for="c in activeGridCols" :key="`cell-${r}-${c}`">
                 <!-- Occupied Cell with Desk or Room -->
                 <div
                   v-if="getDeskAtGridCell(r - 1, c - 1)"
-                  class="bg-surface-3/90 border rounded-lg p-2 flex flex-col justify-between h-16 shadow-sm relative group cursor-pointer transition"
+                  draggable="true"
+                  class="bg-surface-3/90 border rounded-lg p-2 flex flex-col justify-between h-16 shadow-sm relative group cursor-grab active:cursor-grabbing hover:border-hairline-strong transition"
                   :class="{
                     'border-purple-500/60 bg-purple-500/10': getDeskAtGridCell(r - 1, c - 1)?.space_type === 'SALA_REUNIAO',
                     'border-cyan-500/60 bg-cyan-500/10': getDeskAtGridCell(r - 1, c - 1)?.space_type === 'CABINE_FOCUS',
                     'border-primary/40': !getDeskAtGridCell(r - 1, c - 1)?.space_type || getDeskAtGridCell(r - 1, c - 1)?.space_type === 'BAIA',
                   }"
+                  @dragstart="handleDragStart($event, getDeskAtGridCell(r - 1, c - 1)!)"
+                  @dragend="handleDragEnd"
                   @click="openQrModal(getDeskAtGridCell(r - 1, c - 1)!)"
                 >
                   <div class="flex items-center justify-between">
@@ -1119,17 +1280,21 @@ onMounted(() => {
                   </div>
                 </div>
 
-                <!-- Empty Clickable Cell -->
+                <!-- Empty Clickable Cell & Drop Zone -->
                 <button
                   v-else
                   type="button"
                   :disabled="isClickPlacing"
-                  class="border border-dashed border-hairline/80 hover:border-emerald-500/60 hover:bg-emerald-500/5 rounded-lg p-2 flex flex-col items-center justify-center h-16 transition group text-ink-subtle hover:text-emerald-400"
-                  title="Clique para criar baia nesta posição"
+                  class="border border-dashed rounded-lg p-2 flex flex-col items-center justify-center h-16 transition group"
+                  :class="isDraggingDesk ? 'border-primary/60 bg-primary/10 text-primary' : 'border-hairline/80 hover:border-emerald-500/60 hover:bg-emerald-500/5 text-ink-subtle hover:text-emerald-400'"
+                  title="Clique para criar baia ou solte uma baia aqui para mover"
+                  @dragover.prevent
+                  @dragenter.prevent
+                  @drop="handleDropOnGrid(r - 1, c - 1)"
                   @click="handlePlaceDeskOnGrid(r - 1, c - 1)"
                 >
-                  <Plus class="w-4 h-4 text-ink-subtle group-hover:text-emerald-400 group-hover:scale-125 transition" />
-                  <span class="text-[10px] mt-1 text-ink-subtle group-hover:text-ink">+ Alocar</span>
+                  <Plus class="w-4 h-4 group-hover:scale-125 transition" />
+                  <span class="text-[10px] mt-1">{{ isDraggingDesk ? 'Solte aqui' : '+ Alocar' }}</span>
                 </button>
               </template>
             </template>
@@ -1207,10 +1372,18 @@ onMounted(() => {
                 </div>
               </td>
               <td class="px-4 py-3.5">
-                <div class="flex items-center space-x-2 text-ink-subtle">
-                  <span v-if="d.has_monitor" class="text-primary font-medium">Monitor Duplo</span>
-                  <span v-if="d.has_docking_station">• Dock USB-C</span>
-                  <span v-if="d.is_standing_desk">• Standing</span>
+                <div class="flex flex-col space-y-0.5 text-ink-subtle text-xs">
+                  <div class="flex items-center space-x-1.5 flex-wrap gap-y-1">
+                    <span v-if="(d.monitors_count ?? 1) > 0" class="text-primary font-medium">
+                      {{ d.monitors_count ?? (d.has_monitor ? 2 : 0) }} {{ (d.monitors_count ?? 2) === 1 ? 'Monitor' : 'Monitores' }}
+                    </span>
+                    <span v-else class="text-ink-subtle">Sem Monitor</span>
+                    <span v-if="d.has_docking_station" class="text-amber-400 text-[10px] font-semibold bg-amber-400/10 px-1.5 py-0.5 rounded border border-amber-400/20">Dock</span>
+                    <span v-if="d.is_standing_desk" class="text-cyan-400 text-[10px] font-semibold bg-cyan-400/10 px-1.5 py-0.5 rounded border border-cyan-400/20">Standing</span>
+                  </div>
+                  <div v-if="d.extra_equipment" class="text-[10px] text-ink-subtle truncate max-w-xs" :title="d.extra_equipment">
+                    {{ d.extra_equipment }}
+                  </div>
                 </div>
               </td>
               <td class="px-4 py-3.5">
@@ -1571,6 +1744,31 @@ onMounted(() => {
             />
           </div>
 
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-medium text-ink-muted mb-1">Colunas da Grade (X)</label>
+              <input
+                v-model.number="newZoneForm.grid_cols"
+                type="number"
+                min="2"
+                max="30"
+                required
+                class="w-full bg-surface-2 border border-hairline rounded-lg px-3 py-2 text-sm text-ink focus:outline-none focus:border-primary"
+              />
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-ink-muted mb-1">Linhas da Grade (Z)</label>
+              <input
+                v-model.number="newZoneForm.grid_rows"
+                type="number"
+                min="2"
+                max="30"
+                required
+                class="w-full bg-surface-2 border border-hairline rounded-lg px-3 py-2 text-sm text-ink focus:outline-none focus:border-primary"
+              />
+            </div>
+          </div>
+
           <div>
             <label class="block text-xs font-medium text-ink-muted mb-1">Descrição (opcional)</label>
             <textarea
@@ -1749,19 +1947,44 @@ onMounted(() => {
             </div>
           </div>
 
-          <div class="grid grid-cols-3 gap-2 pt-1 text-xs text-ink-muted">
-            <label class="flex items-center space-x-2 cursor-pointer">
-              <input v-model="editDeskForm.has_monitor" type="checkbox" class="accent-primary" />
-              <span>Monitor</span>
-            </label>
-            <label class="flex items-center space-x-2 cursor-pointer">
-              <input v-model="editDeskForm.has_docking_station" type="checkbox" class="accent-primary" />
-              <span>Docking</span>
-            </label>
-            <label class="flex items-center space-x-2 cursor-pointer">
-              <input v-model="editDeskForm.is_standing_desk" type="checkbox" class="accent-primary" />
-              <span>Standing</span>
-            </label>
+          <div class="space-y-3 pt-2 border-t border-hairline">
+            <h4 class="text-xs font-semibold text-ink">Equipamentos da Estação</h4>
+
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-medium text-ink-muted mb-1">Quantidade de Monitores</label>
+                <select
+                  v-model.number="editDeskForm.monitors_count"
+                  class="w-full bg-surface-2 border border-hairline rounded-lg px-3 py-2 text-xs text-ink focus:outline-none focus:border-primary"
+                >
+                  <option :value="0">Sem Monitor</option>
+                  <option :value="1">1 Monitor Central</option>
+                  <option :value="2">2 Monitores (Dual Screen)</option>
+                  <option :value="3">3 Monitores / Ultrawide Setup</option>
+                </select>
+              </div>
+
+              <div>
+                <label class="block text-xs font-medium text-ink-muted mb-1">Equipamentos Adicionais</label>
+                <input
+                  v-model="editDeskForm.extra_equipment"
+                  type="text"
+                  placeholder="Ex: Headset ANC, Câmera 4K"
+                  class="w-full bg-surface-2 border border-hairline rounded-lg px-3 py-2 text-xs text-ink focus:outline-none focus:border-primary"
+                />
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3 pt-1 text-xs text-ink-muted">
+              <label class="flex items-center space-x-2 cursor-pointer bg-surface-2/60 p-2.5 rounded-lg border border-hairline hover:border-hairline-strong transition">
+                <input v-model="editDeskForm.has_docking_station" type="checkbox" class="accent-primary" />
+                <span>Docking Station USB-C</span>
+              </label>
+              <label class="flex items-center space-x-2 cursor-pointer bg-surface-2/60 p-2.5 rounded-lg border border-hairline hover:border-hairline-strong transition">
+                <input v-model="editDeskForm.is_standing_desk" type="checkbox" class="accent-primary" />
+                <span>Standing Desk (Regulável)</span>
+              </label>
+            </div>
           </div>
 
           <div v-if="editDeskError" class="p-2.5 bg-red-500/10 border border-red-500/20 text-red-400 text-xs rounded-lg">

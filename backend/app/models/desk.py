@@ -20,6 +20,8 @@ class Zone(Base):
     name: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
     floor: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     description: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    grid_cols: Mapped[int] = mapped_column(Integer, default=6, nullable=False)
+    grid_rows: Mapped[int] = mapped_column(Integer, default=4, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -47,8 +49,10 @@ class Desk(Base):
 
     # Equipment flags
     has_monitor: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    monitors_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     has_docking_station: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_standing_desk: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    extra_equipment: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
 
     # Space Type & Booking Policies
     space_type: Mapped[str] = mapped_column(String(30), default="BAIA", nullable=False)

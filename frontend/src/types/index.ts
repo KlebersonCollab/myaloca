@@ -53,6 +53,8 @@ export interface Zone {
   floor: number;
   building_id?: number | null;
   description?: string | null;
+  grid_cols: number;
+  grid_rows: number;
   is_active: boolean;
   created_at: string;
 }
@@ -70,8 +72,10 @@ export interface Desk {
   pos_z: number;
   rotation_y: number;
   has_monitor: boolean;
+  monitors_count: number;
   has_docking_station: boolean;
   is_standing_desk: boolean;
+  extra_equipment?: string | null;
   space_type?: SpaceType;
   capacity?: number;
   required_role?: UserRole | null;

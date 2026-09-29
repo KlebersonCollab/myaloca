@@ -348,4 +348,115 @@ async def test_colaborador_forbidden_from_releasing_desk(client: AsyncClient):
     assert forbidden_res.status_code == 403
 
 
+@pytest.mark.asyncio
+async def test_create_and_update_zone_grid_dimensions(client: AsyncClient):
+    admin_token = await get_auth_token(client, "admin_grid@myaloca.com", "admin")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    # 1. Create zone with custom grid dimensions
+    create_res = await client.post(
+        "/api/v1/zones",
+        json={
+            "name": "Zona Custom Grid 8x5",
+            "floor": 4,
+            "description": "Pavimento com particionamento flexivel",
+            "grid_cols": 8,
+            "grid_rows": 5,
+        },
+        headers=admin_headers,
+    )
+    assert create_res.status_code == 201
+    zone_data = create_res.json()
+    assert zone_data["grid_cols"] == 8
+    assert zone_data["grid_rows"] == 5
+    zone_id = zone_data["id"]
+
+    # 2. Update grid dimensions
+    update_res = await client.put(
+        f"/api/v1/zones/{zone_id}",
+        json={"grid_cols": 12, "grid_rows": 6},
+        headers=admin_headers,
+    )
+    assert update_res.status_code == 200
+    updated_data = update_res.json()
+    assert updated_data["grid_cols"] == 12
+    assert updated_data["grid_rows"] == 6
+
+    # 3. Fetch zone and verify persistence
+    get_res = await client.get(f"/api/v1/zones/{zone_id}", headers=admin_headers)
+    assert get_res.status_code == 200
+    assert get_res.json()["grid_cols"] == 12
+    assert get_res.json()["grid_rows"] == 6
+
+
+@pytest.mark.asyncio
+async def test_desk_equipment_editing_and_repositioning(client: AsyncClient):
+    admin_token = await get_auth_token(client, "admin_equip@myaloca.com", "admin")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    # Create Zone
+    z_res = await client.post(
+        "/api/v1/zones",
+        json={"name": "Zona Equipamentos", "floor": 1, "grid_cols": 8, "grid_rows": 4},
+        headers=admin_headers,
+    )
+    zone_id = z_res.json()["id"]
+
+    # 1. Create desk with 2 monitors, docking station and extra equipment
+    d_res = await client.post(
+        "/api/v1/desks",
+        json={
+            "code": "DESK-EQ-01",
+            "zone_id": zone_id,
+            "pos_x": 0.0,
+            "pos_y": 0.0,
+            "pos_z": 0.0,
+            "monitors_count": 2,
+            "has_docking_station": True,
+            "is_standing_desk": True,
+            "extra_equipment": "Câmera 4K & Headset ANC",
+        },
+        headers=admin_headers,
+    )
+    assert d_res.status_code == 201
+    desk_data = d_res.json()
+    assert desk_data["monitors_count"] == 2
+    assert desk_data["has_monitor"] is True
+    assert desk_data["has_docking_station"] is True
+    assert desk_data["is_standing_desk"] is True
+    assert desk_data["extra_equipment"] == "Câmera 4K & Headset ANC"
+    desk_id = desk_data["id"]
+
+    # 2. Reposition desk via Drag & Drop coordinates and edit equipment to 1 monitor
+    up_res = await client.put(
+        f"/api/v1/desks/{desk_id}",
+        json={
+            "pos_x": 4.8,
+            "pos_z": -1.2,
+            "monitors_count": 1,
+            "extra_equipment": "Monitor Ultrawide 34",
+        },
+        headers=admin_headers,
+    )
+    assert up_res.status_code == 200
+    updated = up_res.json()
+    assert updated["pos_x"] == 4.8
+    assert updated["pos_z"] == -1.2
+    assert updated["monitors_count"] == 1
+    assert updated["has_monitor"] is True
+    assert updated["extra_equipment"] == "Monitor Ultrawide 34"
+
+    # 3. Change to 0 monitors
+    zero_res = await client.put(
+        f"/api/v1/desks/{desk_id}",
+        json={"monitors_count": 0},
+        headers=admin_headers,
+    )
+    assert zero_res.status_code == 200
+    assert zero_res.json()["monitors_count"] == 0
+    assert zero_res.json()["has_monitor"] is False
+
+
+
+
 
