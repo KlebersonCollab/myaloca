@@ -200,6 +200,11 @@ async function main() {
   console.log('📸 10. Capturing 10-user-profile-and-avatar.png...');
   await clickNav('Meu Perfil');
   await sleep(1800);
+  await page.evaluate(() => {
+    const editBtn = Array.from(document.querySelectorAll('button')).find(b => b.innerText.includes('Editar Perfil'));
+    if (editBtn) editBtn.click();
+  });
+  await sleep(1200);
   await page.screenshot({ path: path.join(OUTPUT_DIR, '10-user-profile-and-avatar.png') });
 
   // =========================================================================
