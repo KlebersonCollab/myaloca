@@ -221,3 +221,208 @@ async def test_3d_office_layout_projection(client: AsyncClient):
     assert "pos_y" in target_desk
     assert "pos_z" in target_desk
 
+
+@pytest.mark.asyncio
+async def test_booking_meeting_room_max_duration_exceeded(client: AsyncClient):
+    admin_token, user_token, _, _ = await setup_test_desk(client, "ROOM-DUR-01")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    user_headers = {"Authorization": f"Bearer {user_token}"}
+
+    # Create Meeting Room with 60 min max duration
+    zone_res = await client.post(
+        "/api/v1/zones",
+        json={"name": "Zona Reuniões Rápidas", "floor": 2},
+        headers=admin_headers,
+    )
+    zone_id = zone_res.json()["id"]
+
+    room_res = await client.post(
+        "/api/v1/desks",
+        json={
+            "code": "SALA-RAPIDA-01",
+            "zone_id": zone_id,
+            "space_type": "SALA_REUNIAO",
+            "capacity": 6,
+            "max_duration_minutes": 60,
+        },
+        headers=admin_headers,
+    )
+    assert room_res.status_code == 201
+    room_id = room_res.json()["id"]
+
+    now = datetime.now(timezone.utc)
+    base_time = now.replace(minute=0, second=0, microsecond=0) + timedelta(days=2)
+
+    # 1. Try booking for 90 minutes -> Should fail
+    fail_payload = {
+        "desk_id": room_id,
+        "start_time": base_time.isoformat(),
+        "end_time": (base_time + timedelta(minutes=90)).isoformat(),
+    }
+    fail_res = await client.post("/api/v1/bookings", json=fail_payload, headers=user_headers)
+    assert fail_res.status_code == 400
+    assert fail_res.json()["detail"]["code"] == "MAX_DURATION_EXCEEDED"
+
+    # 2. Book for 45 minutes -> Should succeed
+    ok_payload = {
+        "desk_id": room_id,
+        "start_time": base_time.isoformat(),
+        "end_time": (base_time + timedelta(minutes=45)).isoformat(),
+    }
+    ok_res = await client.post("/api/v1/bookings", json=ok_payload, headers=user_headers)
+    assert ok_res.status_code == 201
+
+
+@pytest.mark.asyncio
+async def test_booking_restricted_room_by_colaborador_forbidden(client: AsyncClient):
+    admin_token, user_token, _, _ = await setup_test_desk(client, "ROOM-ROLE-01")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    user_headers = {"Authorization": f"Bearer {user_token}"}
+
+    # Create Executive Room restricted to gestores
+    zone_res = await client.post(
+        "/api/v1/zones",
+        json={"name": "Zona Executiva", "floor": 3},
+        headers=admin_headers,
+    )
+    zone_id = zone_res.json()["id"]
+
+    room_res = await client.post(
+        "/api/v1/desks",
+        json={
+            "code": "SALA-BOARD-01",
+            "zone_id": zone_id,
+            "space_type": "SALA_REUNIAO",
+            "capacity": 12,
+            "required_role": "gestor",
+            "max_duration_minutes": 120,
+        },
+        headers=admin_headers,
+    )
+    assert room_res.status_code == 201
+    room_id = room_res.json()["id"]
+
+    now = datetime.now(timezone.utc)
+    base_time = now.replace(minute=0, second=0, microsecond=0) + timedelta(days=3)
+    booking_payload = {
+        "desk_id": room_id,
+        "start_time": base_time.isoformat(),
+        "end_time": (base_time + timedelta(minutes=60)).isoformat(),
+    }
+
+    # 1. Colaborador attempt -> 403 Forbidden
+    forbidden_res = await client.post(
+        "/api/v1/bookings", json=booking_payload, headers=user_headers
+    )
+    assert forbidden_res.status_code == 403
+    assert forbidden_res.json()["detail"]["code"] == "RESERVATION_RESTRICTED_ROLE"
+
+    # 2. Admin attempt -> 201 Created
+    admin_booking_res = await client.post(
+        "/api/v1/bookings", json=booking_payload, headers=admin_headers
+    )
+    assert admin_booking_res.status_code == 201
+
+
+@pytest.mark.asyncio
+async def test_booking_cancel_pending(client: AsyncClient):
+    _, user_token, desk_id, _ = await setup_test_desk(client, "BAIA-CANCEL-TEST")
+    user_headers = {"Authorization": f"Bearer {user_token}"}
+
+    tomorrow = datetime.now(timezone.utc) + timedelta(days=2)
+    b_res = await client.post(
+        "/api/v1/bookings",
+        json={
+            "desk_id": desk_id,
+            "start_time": (tomorrow.replace(hour=9, minute=0)).isoformat(),
+            "end_time": (tomorrow.replace(hour=18, minute=0)).isoformat(),
+        },
+        headers=user_headers,
+    )
+    assert b_res.status_code == 201
+    b_id = b_res.json()["id"]
+
+    # Cancel pending booking
+    cancel_res = await client.post(f"/api/v1/bookings/{b_id}/cancel", headers=user_headers)
+    assert cancel_res.status_code == 200
+    assert cancel_res.json()["status"] == "CANCELADA_USUARIO"
+
+
+@pytest.mark.asyncio
+async def test_early_checkout_and_desk_rebooking(client: AsyncClient):
+    _, user1_token, desk_id, qr_hash = await setup_test_desk(client, "BAIA-CHECKOUT-TEST")
+    user1_headers = {"Authorization": f"Bearer {user1_token}"}
+
+    # Register user 2
+    reg2_payload = {
+        "email": "user2_checkout@myaloca.com",
+        "full_name": "User 2 Checkout",
+        "password": "pwd",
+        "role": "colaborador",
+    }
+    await client.post("/api/v1/auth/register", json=reg2_payload)
+    login2 = await client.post(
+        "/api/v1/auth/login", data={"username": "user2_checkout@myaloca.com", "password": "pwd"}
+    )
+    user2_token = login2.json()["access_token"]
+    user2_headers = {"Authorization": f"Bearer {user2_token}"}
+
+    # User 1 books desk from now to now + 5h
+    now = datetime.now(timezone.utc)
+    start_time = now - timedelta(minutes=5)
+    end_time = now + timedelta(hours=5)
+
+    b1_res = await client.post(
+        "/api/v1/bookings",
+        json={
+            "desk_id": desk_id,
+            "start_time": start_time.isoformat(),
+            "end_time": end_time.isoformat(),
+        },
+        headers=user1_headers,
+    )
+    assert b1_res.status_code == 201
+    b1_id = b1_res.json()["id"]
+
+    # User 1 checks in
+    checkin_res = await client.post(
+        f"/api/v1/bookings/{b1_id}/checkin",
+        json={"qr_code_hash": qr_hash},
+        headers=user1_headers,
+    )
+    assert checkin_res.status_code == 200
+    assert checkin_res.json()["status"] == "CHECKED_IN"
+
+    # User 2 tries to book desk during User 1's scheduled time -> 409 Conflict
+    overlap_res = await client.post(
+        "/api/v1/bookings",
+        json={
+            "desk_id": desk_id,
+            "start_time": (now + timedelta(hours=1)).isoformat(),
+            "end_time": (now + timedelta(hours=3)).isoformat(),
+        },
+        headers=user2_headers,
+    )
+    assert overlap_res.status_code == 409
+    assert overlap_res.json()["detail"]["code"] == "BOOKING_OVERLAP"
+
+    # User 1 leaves early -> performs early checkout
+    checkout_res = await client.post(f"/api/v1/bookings/{b1_id}/checkout", headers=user1_headers)
+    assert checkout_res.status_code == 200
+    checked_out_data = checkout_res.json()
+    assert checked_out_data["status"] == "FINALIZADA"
+
+    # Now User 2 tries again to book the newly freed desk -> 201 Created!
+    rebook_res = await client.post(
+        "/api/v1/bookings",
+        json={
+            "desk_id": desk_id,
+            "start_time": (now + timedelta(hours=1)).isoformat(),
+            "end_time": (now + timedelta(hours=3)).isoformat(),
+        },
+        headers=user2_headers,
+    )
+    assert rebook_res.status_code == 201
+
+
+

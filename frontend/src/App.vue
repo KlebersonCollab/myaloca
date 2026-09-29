@@ -6,19 +6,30 @@ import BookingModal from './components/BookingModal.vue';
 import QRScannerModal from './components/QRScannerModal.vue';
 import MyBookingsView from './views/MyBookingsView.vue';
 import AdminDesksView from './views/AdminDesksView.vue';
+import AdminUsersView from './views/AdminUsersView.vue';
+import AuthView from './views/AuthView.vue';
 import { useAuth } from './stores/auth';
 import type { DeskWithOccupant } from './types';
 
 const auth = useAuth();
-const currentTab = ref<'3d-office' | 'my-bookings' | 'admin-desks'>('3d-office');
+const currentTab = ref<'3d-office' | 'my-bookings' | 'admin-desks' | 'admin-users' | 'auth'>('3d-office');
 const isBookingModalOpen = ref(false);
 const isQrScannerOpen = ref(false);
 const selectedDesk = ref<DeskWithOccupant | null>(null);
 const officeKey = ref(0);
 
 function openBookingModal(desk: DeskWithOccupant) {
+  if (!auth.isAuthenticated.value) {
+    currentTab.value = 'auth';
+    return;
+  }
   selectedDesk.value = desk;
   isBookingModalOpen.value = true;
+}
+
+function handleLoginSuccess() {
+  officeKey.value++;
+  currentTab.value = '3d-office';
 }
 
 function handleBookingCreated() {
@@ -52,8 +63,14 @@ onMounted(async () => {
       <MyBookingsView
         v-else-if="currentTab === 'my-bookings'"
         @open-qr-scanner="isQrScannerOpen = true"
+        @booking-updated="officeKey++"
       />
       <AdminDesksView v-else-if="currentTab === 'admin-desks'" />
+      <AdminUsersView v-else-if="currentTab === 'admin-users'" />
+      <AuthView
+        v-else-if="currentTab === 'auth'"
+        @login-success="handleLoginSuccess"
+      />
     </main>
 
     <!-- Global Modals -->

@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user
 from app.db.session import get_db
 from app.models.booking import Booking
-from app.models.desk import Desk
+from app.models.desk import Desk, Zone
 from app.models.user import User
 from app.schemas.booking import BookingCheckIn, BookingCreate, BookingResponse
 from app.schemas.desk import DeskWithOccupantResponse
@@ -41,6 +41,22 @@ async def create_booking(
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail={"code": "DESK_NOT_FOUND", "message": "Baia não encontrada."},
+            ) from e
+        if err_msg == "RESERVATION_RESTRICTED_ROLE":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "code": "RESERVATION_RESTRICTED_ROLE",
+                    "message": "Este espaço é exclusivo para gestores e liderança.",
+                },
+            ) from e
+        if err_msg == "MAX_DURATION_EXCEEDED":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "code": "MAX_DURATION_EXCEEDED",
+                    "message": "A duração da reserva excede o limite permitido.",
+                },
             ) from e
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -100,6 +116,65 @@ async def checkin_booking(
         ) from e
 
 
+@router.post("/{booking_id}/cancel", response_model=BookingResponse)
+async def cancel_booking(
+    booking_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> Booking:
+    is_admin = current_user.role in ("admin", "gestor")
+    try:
+        return await BookingService.cancel_booking(
+            db, booking_id=booking_id, user_id=current_user.id, is_admin=is_admin
+        )
+    except ValueError as e:
+        err = str(e)
+        if err == "BOOKING_NOT_FOUND":
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"code": "BOOKING_NOT_FOUND", "message": "Reserva não encontrada."},
+            ) from e
+        if err == "OPERATION_FORBIDDEN":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={"code": "OPERATION_FORBIDDEN", "message": "Permissão negada."},
+            ) from e
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "CANCEL_ERROR", "message": err},
+        ) from e
+
+
+@router.post("/{booking_id}/checkout", response_model=BookingResponse)
+async def checkout_booking(
+    booking_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> Booking:
+    """Early checkout / releases an occupied desk so other users can immediately book it."""
+    is_admin = current_user.role in ("admin", "gestor")
+    try:
+        return await BookingService.cancel_booking(
+            db, booking_id=booking_id, user_id=current_user.id, is_admin=is_admin
+        )
+    except ValueError as e:
+        err = str(e)
+        if err == "BOOKING_NOT_FOUND":
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"code": "BOOKING_NOT_FOUND", "message": "Reserva não encontrada."},
+            ) from e
+        if err == "OPERATION_FORBIDDEN":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={"code": "OPERATION_FORBIDDEN", "message": "Permissão negada."},
+            ) from e
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "CHECKOUT_ERROR", "message": err},
+        ) from e
+
+
 @router.get("/me", response_model=list[BookingResponse])
 async def list_my_bookings(
     current_user: Annotated[User, Depends(get_current_user)],
@@ -113,11 +188,20 @@ async def get_3d_office_layout(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
     zone_id: int | None = None,
+    floor: int | None = None,
 ) -> list[DeskWithOccupantResponse]:
-    """Returns desks with 3D coordinates and current occupant avatar/photo."""
-    all_desks = await DeskService.get_desks_by_zone(db, zone_id) if zone_id else (
-        (await db.execute(select(Desk))).scalars().all()
-    )
+    """Returns desks with 3D coordinates and current occupant avatar/photo,
+    optionally filtered by floor or zone."""
+    if zone_id is not None:
+        all_desks = await DeskService.get_desks_by_zone(db, zone_id)
+    elif floor is not None:
+        result = await db.execute(
+            select(Desk).join(Zone, Desk.zone_id == Zone.id).where(Zone.floor == floor)
+        )
+        all_desks = result.scalars().all()
+    else:
+        all_desks = (await db.execute(select(Desk))).scalars().all()
+
     active_occupancies = await BookingService.get_active_occupancies(db)
     occupancy_map: dict[int, Booking] = {b.desk_id: b for b in active_occupancies}
 

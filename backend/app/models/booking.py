@@ -4,6 +4,8 @@ from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+from app.models.desk import Desk
+from app.models.user import User
 
 
 class Booking(Base):
@@ -38,5 +40,5 @@ class Booking(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    desk = relationship("Desk", backref="bookings")
-    user = relationship("User", backref="bookings")
+    desk = relationship(Desk, backref="bookings")
+    user = relationship(User, backref="bookings")

@@ -26,6 +26,31 @@ class UserUpdate(BaseModel):
     password: str | None = None
 
 
+class AdminUserCreate(BaseModel):
+    email: EmailStr
+    full_name: str
+    password: str
+    role: str = "colaborador"
+    avatar_url: str | None = None
+    photo_url: str | None = None
+    job_title: str | None = None
+    department: str | None = None
+    is_active: bool = True
+
+
+class AdminUserUpdate(BaseModel):
+    email: EmailStr | None = None
+    full_name: str | None = None
+    role: str | None = None
+    avatar_url: str | None = None
+    photo_url: str | None = None
+    job_title: str | None = None
+    department: str | None = None
+    is_active: bool | None = None
+    password: str | None = None
+
+
+
 class UserResponse(UserBase):
     id: int
     is_active: bool

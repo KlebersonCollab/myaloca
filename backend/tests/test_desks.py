@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta, timezone
+
 import pytest
 from httpx import AsyncClient
 
@@ -96,3 +98,254 @@ async def test_get_desk_qr_code_png(client: AsyncClient):
     assert qr_res.status_code == 200
     assert qr_res.headers["content-type"] == "image/png"
     assert len(qr_res.content) > 100
+
+
+@pytest.mark.asyncio
+async def test_batch_create_desks_and_floor_filter(client: AsyncClient):
+    admin_token = await get_auth_token(client, "admin_batch@myaloca.com", "admin")
+    headers = {"Authorization": f"Bearer {admin_token}"}
+
+    # 1. Create Zone on Floor 3
+    zone_res = await client.post(
+        "/api/v1/zones",
+        json={
+            "name": "3º Andar - Inovação",
+            "floor": 3,
+            "description": "Lab de Inteligência Artificial",
+        },
+        headers=headers,
+    )
+    assert zone_res.status_code == 201
+    zone_id = zone_res.json()["id"]
+
+    # 2. Create Batch of 4 Desks
+    batch_payload = [
+        {
+            "code": f"AI-0{i}",
+            "zone_id": zone_id,
+            "pos_x": (i - 2.5) * 2.2,
+            "pos_y": 0.0,
+            "pos_z": 0.0,
+            "rotation_y": 0.0,
+            "has_monitor": True,
+            "has_docking_station": True,
+        }
+        for i in range(1, 5)
+    ]
+    batch_res = await client.post("/api/v1/desks/batch", json=batch_payload, headers=headers)
+    assert batch_res.status_code == 201
+    desks = batch_res.json()
+    assert len(desks) == 4
+    assert {d["code"] for d in desks} == {"AI-01", "AI-02", "AI-03", "AI-04"}
+
+    # 3. Filter Desks by Floor 3
+    floor_desks_res = await client.get("/api/v1/desks?floor=3", headers=headers)
+    assert floor_desks_res.status_code == 200
+    floor_desks = floor_desks_res.json()
+    assert len(floor_desks) >= 4
+    for d in floor_desks:
+        assert d["zone_id"] == zone_id
+
+    # 4. Filter Zones by Floor 3
+    floor_zones_res = await client.get("/api/v1/zones?floor=3", headers=headers)
+    assert floor_zones_res.status_code == 200
+    floor_zones = floor_zones_res.json()
+    assert len(floor_zones) >= 1
+    assert all(z["floor"] == 3 for z in floor_zones)
+
+    # 5. Filter 3D Office by Floor 3
+    office_3d_res = await client.get("/api/v1/bookings/3d-office?floor=3", headers=headers)
+    assert office_3d_res.status_code == 200
+    office_desks = office_3d_res.json()
+    assert len(office_desks) >= 4
+
+
+@pytest.mark.asyncio
+async def test_delete_desk_success(client: AsyncClient):
+    admin_token = await get_auth_token(client, "admin_del@myaloca.com", "admin")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    # 1. Create Zone and Desk
+    z_res = await client.post(
+        "/api/v1/zones",
+        json={"name": "Zona Deleção", "floor": 1},
+        headers=admin_headers,
+    )
+    zone_id = z_res.json()["id"]
+
+    d_res = await client.post(
+        "/api/v1/desks",
+        json={
+            "code": "BAIA-TO-DELETE",
+            "zone_id": zone_id,
+            "pos_x": 0.0,
+            "pos_y": 0.0,
+            "pos_z": 0.0,
+        },
+        headers=admin_headers,
+    )
+    desk_id = d_res.json()["id"]
+
+    # 2. Delete Desk -> Should succeed
+    del_res = await client.delete(f"/api/v1/desks/{desk_id}", headers=admin_headers)
+    assert del_res.status_code == 200
+    assert del_res.json()["code"] == "DESK_DELETED"
+
+    # 3. Verify desk no longer exists
+    get_res = await client.get(f"/api/v1/desks/{desk_id}", headers=admin_headers)
+    assert get_res.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_desk_forbidden_for_colaborador(client: AsyncClient):
+    admin_token = await get_auth_token(client, "admin_del2@myaloca.com", "admin")
+    colab_token = await get_auth_token(client, "colab_del@myaloca.com", "colaborador")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    colab_headers = {"Authorization": f"Bearer {colab_token}"}
+
+    z_res = await client.post(
+        "/api/v1/zones",
+        json={"name": "Zona Protegida", "floor": 1},
+        headers=admin_headers,
+    )
+    zone_id = z_res.json()["id"]
+
+    d_res = await client.post(
+        "/api/v1/desks",
+        json={"code": "BAIA-SECURE", "zone_id": zone_id, "pos_x": 0.0, "pos_y": 0.0, "pos_z": 0.0},
+        headers=admin_headers,
+    )
+    desk_id = d_res.json()["id"]
+
+    # Colaborador attempts deletion -> 403 Forbidden
+    del_res = await client.delete(f"/api/v1/desks/{desk_id}", headers=colab_headers)
+    assert del_res.status_code == 403
+    assert del_res.json()["detail"]["code"] == "PERMISSION_DENIED"
+
+
+@pytest.mark.asyncio
+async def test_delete_desk_with_active_booking_rejected(client: AsyncClient):
+    admin_token = await get_auth_token(client, "admin_del3@myaloca.com", "admin")
+    colab_token = await get_auth_token(client, "colab_del3@myaloca.com", "colaborador")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    colab_headers = {"Authorization": f"Bearer {colab_token}"}
+
+    z_res = await client.post(
+        "/api/v1/zones",
+        json={"name": "Zona Com Reserva", "floor": 2},
+        headers=admin_headers,
+    )
+    zone_id = z_res.json()["id"]
+
+    d_res = await client.post(
+        "/api/v1/desks",
+        json={
+            "code": "BAIA-ACTIVE-BOOKING",
+            "zone_id": zone_id,
+            "pos_x": 0.0,
+            "pos_y": 0.0,
+            "pos_z": 0.0,
+        },
+        headers=admin_headers,
+    )
+    desk_id = d_res.json()["id"]
+
+    # Create active booking
+    now = datetime.now(timezone.utc)
+    book_res = await client.post(
+        "/api/v1/bookings",
+        json={
+            "desk_id": desk_id,
+            "start_time": (now + timedelta(hours=1)).isoformat(),
+            "end_time": (now + timedelta(hours=4)).isoformat(),
+        },
+        headers=colab_headers,
+    )
+    assert book_res.status_code == 201
+    booking_id = book_res.json()["id"]
+
+    # 1. Admin tries to delete desk with active booking -> 400 Bad Request
+    del_res = await client.delete(f"/api/v1/desks/{desk_id}", headers=admin_headers)
+    assert del_res.status_code == 400
+    assert del_res.json()["detail"]["code"] == "ACTIVE_BOOKINGS_EXIST"
+
+    # 2. User cancels booking
+    cancel_res = await client.post(f"/api/v1/bookings/{booking_id}/cancel", headers=colab_headers)
+    assert cancel_res.status_code == 200
+
+    # 3. Now deletion succeeds
+    del_ok = await client.delete(f"/api/v1/desks/{desk_id}", headers=admin_headers)
+    assert del_ok.status_code == 200
+    assert del_ok.json()["code"] == "DESK_DELETED"
+
+
+@pytest.mark.asyncio
+async def test_admin_release_desk_with_active_booking(client: AsyncClient):
+    admin_token = await get_auth_token(client, "admin_rel@myaloca.com", "admin")
+    colab_token = await get_auth_token(client, "colab_rel@myaloca.com", "colaborador")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    colab_headers = {"Authorization": f"Bearer {colab_token}"}
+
+    z_res = await client.post(
+        "/api/v1/zones",
+        json={"name": "Zona Release Test", "floor": 1},
+        headers=admin_headers,
+    )
+    zone_id = z_res.json()["id"]
+
+    d_res = await client.post(
+        "/api/v1/desks",
+        json={
+            "code": "BAIA-ADMIN-RELEASE",
+            "zone_id": zone_id,
+            "pos_x": 0.0,
+            "pos_y": 0.0,
+            "pos_z": 0.0,
+        },
+        headers=admin_headers,
+    )
+    desk_id = d_res.json()["id"]
+
+    # Colaborador creates booking
+    now = datetime.now(timezone.utc)
+    b_res = await client.post(
+        "/api/v1/bookings",
+        json={
+            "desk_id": desk_id,
+            "start_time": (now - timedelta(minutes=5)).isoformat(),
+            "end_time": (now + timedelta(hours=4)).isoformat(),
+        },
+        headers=colab_headers,
+    )
+    assert b_res.status_code == 201
+
+    # Admin administratively releases the desk
+    rel_res = await client.post(f"/api/v1/desks/{desk_id}/release", headers=admin_headers)
+    assert rel_res.status_code == 200
+    assert rel_res.json()["status"] == "DISPONIVEL"
+
+    # Now another collaborator can book the same desk immediately without overlap error
+    colab2_token = await get_auth_token(client, "colab2_rel@myaloca.com", "colaborador")
+    colab2_headers = {"Authorization": f"Bearer {colab2_token}"}
+    rebook_res = await client.post(
+        "/api/v1/bookings",
+        json={
+            "desk_id": desk_id,
+            "start_time": (now + timedelta(hours=1)).isoformat(),
+            "end_time": (now + timedelta(hours=3)).isoformat(),
+        },
+        headers=colab2_headers,
+    )
+    assert rebook_res.status_code == 201
+
+
+@pytest.mark.asyncio
+async def test_colaborador_forbidden_from_releasing_desk(client: AsyncClient):
+    colab_token = await get_auth_token(client, "colab_rel_forbid@myaloca.com", "colaborador")
+    colab_headers = {"Authorization": f"Bearer {colab_token}"}
+
+    forbidden_res = await client.post("/api/v1/desks/1/release", headers=colab_headers)
+    assert forbidden_res.status_code == 403
+
+
+

@@ -8,6 +8,7 @@ from sqlalchemy.orm import selectinload
 from app.core.config import settings
 from app.models.booking import Booking
 from app.models.desk import Desk
+from app.models.user import User
 from app.schemas.booking import BookingCreate
 
 
@@ -34,6 +35,19 @@ class BookingService:
         # Collision detection: overlap with active reservations
         req_start = ensure_utc(booking_in.start_time)
         req_end = ensure_utc(booking_in.end_time)
+
+        # 1. Role permission policy check
+        if desk.required_role and desk.required_role.lower() in ("admin", "gestor"):
+            user_res = await db.execute(select(User).where(User.id == user_id))
+            user = user_res.scalar_one_or_none()
+            if not user or user.role.lower() not in ("admin", "gestor"):
+                raise ValueError("RESERVATION_RESTRICTED_ROLE")
+
+        # 2. Maximum booking duration policy check
+        if desk.max_duration_minutes and desk.max_duration_minutes > 0:
+            duration_minutes = (req_end - req_start).total_seconds() / 60
+            if duration_minutes > desk.max_duration_minutes:
+                raise ValueError("MAX_DURATION_EXCEEDED")
 
         overlap_query = select(Booking).where(
             and_(
@@ -136,8 +150,43 @@ class BookingService:
 
     @staticmethod
     async def get_booking_by_id(db: AsyncSession, booking_id: int) -> Booking | None:
-        result = await db.execute(select(Booking).where(Booking.id == booking_id))
+        result = await db.execute(
+            select(Booking).where(Booking.id == booking_id).options(selectinload(Booking.desk))
+        )
         return result.scalar_one_or_none()
+
+    @staticmethod
+    async def cancel_booking(
+        db: AsyncSession, booking_id: int, user_id: int, is_admin: bool = False
+    ) -> Booking:
+        booking = await BookingService.get_booking_by_id(db, booking_id)
+        if not booking:
+            raise ValueError("BOOKING_NOT_FOUND")
+        if not is_admin and booking.user_id != user_id:
+            raise ValueError("OPERATION_FORBIDDEN")
+        if booking.status in ["CANCELADA_USUARIO", "EXPIRADA_NO_SHOW", "FINALIZADA"]:
+            raise ValueError("BOOKING_ALREADY_FINISHED")
+
+        now = datetime.now(timezone.utc)
+        if booking.status == "CHECKED_IN":
+            # Early checkout/release: user checked in, but leaves early
+            # Truncate end_time to now so remaining hours are freed immediately
+            start_utc = ensure_utc(booking.start_time)
+            end_utc = ensure_utc(booking.end_time)
+            if now < end_utc:
+                # Ensure end_time >= start_time
+                booking.end_time = max(start_utc, now)
+            booking.status = "FINALIZADA"
+        else:
+            booking.status = "CANCELADA_USUARIO"
+
+        if booking.desk and booking.desk.status != "MANUTENCAO":
+            booking.desk.status = "DISPONIVEL"
+            db.add(booking.desk)
+        db.add(booking)
+        await db.commit()
+        await db.refresh(booking)
+        return booking
 
     @staticmethod
     async def get_user_bookings(db: AsyncSession, user_id: int) -> Sequence[Booking]:
@@ -161,8 +210,8 @@ class BookingService:
 
         active_now: list[Booking] = []
         for b in all_active:
-            st = ensure_utc(b.start_time)
             et = ensure_utc(b.end_time)
-            if st <= now + timedelta(hours=8) and et >= now:
+            # Active if end_time has not passed by more than 2 hours
+            if et >= now - timedelta(hours=2):
                 active_now.append(b)
         return active_now

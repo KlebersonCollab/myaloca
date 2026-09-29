@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict
 class ZoneBase(BaseModel):
     name: str
     floor: int = 1
+    building_id: int | None = None
     description: str | None = None
     is_active: bool = True
 
@@ -18,6 +19,7 @@ class ZoneCreate(ZoneBase):
 class ZoneUpdate(BaseModel):
     name: str | None = None
     floor: int | None = None
+    building_id: int | None = None
     description: str | None = None
     is_active: bool | None = None
 
@@ -40,6 +42,10 @@ class DeskBase(BaseModel):
     has_monitor: bool = False
     has_docking_station: bool = False
     is_standing_desk: bool = False
+    space_type: str = "BAIA"
+    capacity: int = 1
+    required_role: str | None = None
+    max_duration_minutes: int | None = None
 
 
 class DeskCreate(DeskBase):
@@ -57,6 +63,10 @@ class DeskUpdate(BaseModel):
     has_monitor: bool | None = None
     has_docking_station: bool | None = None
     is_standing_desk: bool | None = None
+    space_type: str | None = None
+    capacity: int | None = None
+    required_role: str | None = None
+    max_duration_minutes: int | None = None
 
 
 class DeskResponse(DeskBase):

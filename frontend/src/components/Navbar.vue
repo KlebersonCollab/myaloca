@@ -7,16 +7,18 @@ import {
   Shield,
   User as UserIcon,
   LogOut,
+  LogIn,
   RefreshCw,
+  Users,
 } from 'lucide-vue-next';
 import { useAuth } from '../stores/auth';
 
 const props = defineProps<{
-  currentTab: '3d-office' | 'my-bookings' | 'admin-desks';
+  currentTab: '3d-office' | 'my-bookings' | 'admin-desks' | 'admin-users' | 'auth';
 }>();
 
 const emit = defineEmits<{
-  (e: 'navigate', tab: '3d-office' | 'my-bookings' | 'admin-desks'): void;
+  (e: 'navigate', tab: '3d-office' | 'my-bookings' | 'admin-desks' | 'admin-users' | 'auth'): void;
   (e: 'open-qr-scanner'): void;
 }>();
 
@@ -97,7 +99,34 @@ async function handleSwitchRole() {
             @click="emit('navigate', 'admin-desks')"
           >
             <Shield class="w-4 h-4 text-purple-400" />
-            <span>Painel do Gestor</span>
+            <span>Facilities & Baias</span>
+          </button>
+
+          <button
+            v-if="isAdmin"
+            class="px-3 py-1.5 rounded-md text-sm font-medium transition flex items-center space-x-2"
+            :class="
+              props.currentTab === 'admin-users'
+                ? 'bg-surface-3 text-ink border border-hairline-strong shadow-sm'
+                : 'text-ink-subtle hover:text-ink hover:bg-surface-2'
+            "
+            @click="emit('navigate', 'admin-users')"
+          >
+            <Users class="w-4 h-4 text-cyan-400" />
+            <span>Equipe & Cargos</span>
+          </button>
+
+          <button
+            class="px-3 py-1.5 rounded-md text-sm font-medium transition flex items-center space-x-2"
+            :class="
+              props.currentTab === 'auth'
+                ? 'bg-surface-3 text-ink border border-hairline-strong shadow-sm'
+                : 'text-ink-subtle hover:text-ink hover:bg-surface-2'
+            "
+            @click="emit('navigate', 'auth')"
+          >
+            <UserIcon class="w-4 h-4 text-primary" />
+            <span>{{ currentUser ? 'Meu Perfil' : 'Entrar' }}</span>
           </button>
         </nav>
       </div>
@@ -116,6 +145,7 @@ async function handleSwitchRole() {
 
         <!-- Demo Role Switcher -->
         <button
+          v-if="currentUser"
           class="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md bg-surface-2 hover:bg-surface-3 border border-hairline text-ink-muted text-xs transition"
           @click="handleSwitchRole"
           :title="`Trocar para perfil de ${isAdmin ? 'Colaborador' : 'Gestor'}`"
@@ -125,31 +155,48 @@ async function handleSwitchRole() {
           <span class="font-medium text-ink">{{ isAdmin ? 'Gestor' : 'Colaborador' }}</span>
         </button>
 
-        <!-- Current User Avatar / Badge -->
-        <div class="flex items-center space-x-2.5 pl-2 border-l border-hairline">
-          <div class="w-8 h-8 rounded-full bg-surface-3 border border-hairline flex items-center justify-center overflow-hidden">
-            <img
-              v-if="currentUser?.avatar_url || currentUser?.photo_url"
-              :src="currentUser.avatar_url || currentUser.photo_url || ''"
-              :alt="currentUser.full_name"
-              class="w-full h-full object-cover"
-            />
-            <UserIcon v-else class="w-4 h-4 text-ink-subtle" />
-          </div>
-          <div class="hidden sm:block text-left">
-            <div class="text-xs font-medium text-ink leading-tight">
-              {{ currentUser?.full_name || 'Carregando...' }}
-            </div>
-            <div class="text-[10px] text-ink-subtle">
-              {{ currentRoleLabel }}
-            </div>
-          </div>
+        <!-- Authenticated Profile Capsule -->
+        <div v-if="currentUser" class="flex items-center space-x-2.5 pl-2 border-l border-hairline">
           <button
-            class="p-1 rounded text-ink-subtle hover:text-ink hover:bg-surface-2 transition"
-            title="Sair"
-            @click="logout"
+            class="flex items-center space-x-2.5 text-left p-1 rounded-lg hover:bg-surface-2 transition group"
+            title="Ver meu perfil e avatar"
+            @click="emit('navigate', 'auth')"
+          >
+            <div class="w-8 h-8 rounded-full bg-surface-3 border border-hairline flex items-center justify-center overflow-hidden ring-1 ring-primary/40">
+              <img
+                v-if="currentUser?.avatar_url || currentUser?.photo_url"
+                :src="currentUser.avatar_url || currentUser.photo_url || ''"
+                :alt="currentUser.full_name"
+                class="w-full h-full object-cover"
+              />
+              <UserIcon v-else class="w-4 h-4 text-ink-subtle" />
+            </div>
+            <div class="hidden sm:block">
+              <div class="text-xs font-medium text-ink leading-tight group-hover:text-primary transition">
+                {{ currentUser?.full_name || 'Carregando...' }}
+              </div>
+              <div class="text-[10px] text-ink-subtle">
+                {{ currentRoleLabel }}
+              </div>
+            </div>
+          </button>
+          <button
+            class="p-1.5 rounded-md text-ink-subtle hover:text-red-400 hover:bg-surface-2 transition"
+            title="Sair da conta"
+            @click="() => { logout(); emit('navigate', 'auth'); }"
           >
             <LogOut class="w-4 h-4" />
+          </button>
+        </div>
+
+        <!-- Unauthenticated: Login CTA -->
+        <div v-else class="pl-2 border-l border-hairline">
+          <button
+            class="flex items-center space-x-1.5 px-3 py-1.5 rounded-md bg-surface-2 hover:bg-surface-3 border border-hairline text-ink text-xs font-semibold shadow-sm transition"
+            @click="emit('navigate', 'auth')"
+          >
+            <LogIn class="w-4 h-4 text-primary" />
+            <span>Entrar</span>
           </button>
         </div>
       </div>
